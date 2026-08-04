@@ -72,17 +72,19 @@ export class TaskUpdater {
       if (newStatus?.type === "DONE" && currentStatus?.type !== "DONE") {
         if (setDoneDate) {
           const today = this.getTodayDateString();
-          // Remove any existing done date first to avoid duplicates
-          updatedLine = updatedLine.replace(
-            /\s*✅\s*\d{4}-\d{2}-\d{2}\s*$/,
-            "",
-          );
+          // Remove any existing done date first to avoid duplicates.
+          // No $ anchor: the done date may not be at the end of the line when a
+          // cancelled date follows (e.g. Cancelled -> Done transition appends
+          // the done date before removing the cancelled date). The ✅ marker is
+          // specific enough that matching anywhere is safe.
+          // See https://github.com/Djiit/obsidian-tasks-kanban/issues/53
+          updatedLine = updatedLine.replace(/\s*✅\s*\d{4}-\d{2}-\d{2}/g, "");
           // Append new done date
           updatedLine = `${updatedLine} ✅ ${today}`;
         }
       } else if (currentStatus?.type === "DONE" && newStatus?.type !== "DONE") {
         // Transitioning AWAY from DONE - remove the done date
-        updatedLine = updatedLine.replace(/\s*✅\s*\d{4}-\d{2}-\d{2}\s*$/, "");
+        updatedLine = updatedLine.replace(/\s*✅\s*\d{4}-\d{2}-\d{2}/g, "");
       }
 
       // Handle cancelled date: add when transitioning TO CANCELLED, remove when transitioning AWAY from CANCELLED
@@ -92,11 +94,13 @@ export class TaskUpdater {
       ) {
         if (setCancelledDate) {
           const today = this.getTodayDateString();
-          // Remove any existing cancelled date first
-          updatedLine = updatedLine.replace(
-            /\s*❌\s*\d{4}-\d{2}-\d{2}\s*$/,
-            "",
-          );
+          // Remove any existing cancelled date first.
+          // No $ anchor for the same reason as above: when transitioning from
+          // DONE -> CANCELLED the done date is removed first, then the cancelled
+          // date is appended — but we also guard against a stale done date if the
+          // order of blocks changed. The ❌ marker is specific enough.
+          // See https://github.com/Djiit/obsidian-tasks-kanban/issues/53
+          updatedLine = updatedLine.replace(/\s*❌\s*\d{4}-\d{2}-\d{2}/g, "");
           // Append new cancelled date
           updatedLine = `${updatedLine} ❌ ${today}`;
         }
@@ -105,7 +109,7 @@ export class TaskUpdater {
         newStatus?.type !== "CANCELLED"
       ) {
         // Transitioning AWAY from CANCELLED - remove the cancelled date
-        updatedLine = updatedLine.replace(/\s*❌\s*\d{4}-\d{2}-\d{2}\s*$/, "");
+        updatedLine = updatedLine.replace(/\s*❌\s*\d{4}-\d{2}-\d{2}/g, "");
       }
 
       lines[lineNumber] = updatedLine;
