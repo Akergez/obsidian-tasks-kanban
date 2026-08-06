@@ -240,8 +240,7 @@ export default class TasksKanbanPlugin extends Plugin {
    */
   private async loadPluginData() {
     const data = (await this.loadData()) as
-      | (Partial<PluginData> & LegacyBoardState)
-      | null;
+      (Partial<PluginData> & LegacyBoardState) | null;
     this.data = {
       baseQuery: data?.baseQuery ?? data?.query ?? migrateLegacyQuery(data),
       baseCollapsedColumns:
