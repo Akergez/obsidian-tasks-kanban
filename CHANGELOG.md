@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.2](https://github.com/Djiit/obsidian-tasks-kanban/compare/0.10.1...0.10.2) (2026-08-06)
+
+
+### Bug Fixes
+
+* remove stale done/cancelled date on cross-status transitions ([df47116](https://github.com/Djiit/obsidian-tasks-kanban/commit/df47116fec51a16b26b647cff22f5928928d4b73))
+* remove stale done/cancelled date on cross-status transitions ([f8dc3c2](https://github.com/Djiit/obsidian-tasks-kanban/commit/f8dc3c27b2912af898fefcdcdba1e5b077ff4b4c))
+
 ## [0.10.1](https://github.com/Djiit/obsidian-tasks-kanban/compare/0.10.0...0.10.1) (2026-07-20)
 
 
