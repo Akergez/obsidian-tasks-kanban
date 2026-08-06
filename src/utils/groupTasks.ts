@@ -10,13 +10,7 @@ import type { SortDirection } from "./sortTasks";
  * function` (arbitrary JS) is intentionally not supported.
  */
 export type GroupField =
-  | "none"
-  | "status"
-  | "priority"
-  | "tags"
-  | "path"
-  | "folder"
-  | "filename";
+  "none" | "status" | "priority" | "tags" | "path" | "folder" | "filename";
 
 /**
  * The state of the group control: which field to split lanes by and whether to

@@ -430,6 +430,62 @@ describe("TaskUpdater", () => {
       );
     });
 
+    it("should remove cancelled date and add done date when transitioning FROM CANCELLED to DONE", async () => {
+      // Regression test for https://github.com/Djiit/obsidian-tasks-kanban/issues/53
+      // Cancelled -> Done must remove the ❌ cancelled date AND add ✅ done date,
+      // not leave both dates on the line.
+      const task = createTask("-", 0);
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.vault.read.mockResolvedValue(
+        "- [-] Cancelled task ❌ 2026-07-19",
+      );
+
+      mockTasksIntegration.getStatusBySymbol.mockImplementation((symbol) => {
+        if (symbol === "-") return CANCELLED_STATUS;
+        if (symbol === "x") return DONE_STATUS;
+        return undefined;
+      });
+      mockTasksIntegration.getDateSettings.mockResolvedValue({
+        setDoneDate: true,
+        setCancelledDate: true,
+      });
+
+      const result = await taskUpdater.updateTaskStatus(task, "x");
+      expect(result).toBe(true);
+      const expectedDate = getExpectedDate();
+      expect(mockApp.vault.modify).toHaveBeenCalledWith(
+        mockFile,
+        `- [x] Cancelled task ✅ ${expectedDate}`,
+      );
+    });
+
+    it("should remove done date and add cancelled date when transitioning FROM DONE to CANCELLED", async () => {
+      // Regression test for https://github.com/Djiit/obsidian-tasks-kanban/issues/53
+      // Done -> Cancelled must remove the ✅ done date AND add ❌ cancelled date,
+      // not leave both dates on the line.
+      const task = createTask("x", 0);
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.vault.read.mockResolvedValue("- [x] Done task ✅ 2026-07-19");
+
+      mockTasksIntegration.getStatusBySymbol.mockImplementation((symbol) => {
+        if (symbol === "x") return DONE_STATUS;
+        if (symbol === "-") return CANCELLED_STATUS;
+        return undefined;
+      });
+      mockTasksIntegration.getDateSettings.mockResolvedValue({
+        setDoneDate: true,
+        setCancelledDate: true,
+      });
+
+      const result = await taskUpdater.updateTaskStatus(task, "-");
+      expect(result).toBe(true);
+      const expectedDate = getExpectedDate();
+      expect(mockApp.vault.modify).toHaveBeenCalledWith(
+        mockFile,
+        `- [-] Done task ❌ ${expectedDate}`,
+      );
+    });
+
     it("should remove cancelled date when transitioning FROM CANCELLED to TODO", async () => {
       const task = createTask("-", 0);
       mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
