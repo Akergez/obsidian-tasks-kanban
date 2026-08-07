@@ -35,3 +35,9 @@ edge cases. Open the Kanban view and walk through the checklist in each file.
 - `09 - Drag and drop targets.md` — tasks to move between columns.
 - `10 - Dependencies dates priorities.md` — full metadata: all priorities, all
   date types, and task dependencies (🆔 id / ⛔ blocked-by) incl. chains & cycles.
+- `11 - Dataview format.md` — tasks in Dataview inline-field syntax. Exercising
+  this file requires flipping the Tasks plugin's **Task Format** setting to
+  **Dataview** (`.obsidian/plugins/obsidian-tasks-plugin/data.json`); the rest
+  of this vault assumes the default `tasksPluginEmoji` format, and Tasks does
+  not support both formats at once, so don't try to exercise this file and the
+  others in the same session.

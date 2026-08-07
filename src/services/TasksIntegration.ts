@@ -1,5 +1,10 @@
 import type { App, EventRef } from "obsidian";
 import { TaskUpdater } from "./TaskUpdater";
+import {
+  type TaskFormat,
+  resolveTaskFormat,
+  DEFAULT_TASK_FORMAT,
+} from "../utils/taskFormat";
 
 /**
  * Interface representing a Task from the Tasks plugin
@@ -78,6 +83,15 @@ const DEFAULT_STATUSES: StatusInfo[] = [
 export interface TasksCacheUpdateData {
   tasks: Task[];
   state: string;
+}
+
+/**
+ * Tasks plugin settings relevant to writing done/cancelled dates
+ */
+export interface WriteSettings {
+  setDoneDate: boolean;
+  setCancelledDate: boolean;
+  taskFormat: TaskFormat;
 }
 
 /**
@@ -243,50 +257,56 @@ export class TasksIntegration {
   }
 
   /**
-   * Get the Tasks plugin's date settings (setDoneDate, setCancelledDate)
+   * Get the Tasks plugin's write-relevant settings (setDoneDate,
+   * setCancelledDate, taskFormat).
    * Reads from in-memory settings first, then falls back to persisted data.json
    */
-  async getDateSettings(): Promise<{
-    setDoneDate: boolean;
-    setCancelledDate: boolean;
-  }> {
+  async getWriteSettings(): Promise<WriteSettings> {
     // Try in-memory settings first
     const plugin = this.app.plugins.getPlugin("obsidian-tasks-plugin") as {
-      settings?: { setDoneDate?: boolean; setCancelledDate?: boolean };
+      settings?: {
+        setDoneDate?: boolean;
+        setCancelledDate?: boolean;
+        taskFormat?: string;
+      };
     } | null;
 
     if (plugin?.settings) {
       return {
         setDoneDate: plugin.settings.setDoneDate ?? false,
         setCancelledDate: plugin.settings.setCancelledDate ?? false,
+        taskFormat: resolveTaskFormat(plugin.settings.taskFormat),
       };
     }
 
     // Fall back to persisted settings
-    return this.readDateSettingsFromFile();
+    return this.readWriteSettingsFromFile();
   }
 
   /**
-   * Read date settings from the Tasks plugin's persisted data.json
+   * Read write settings from the Tasks plugin's persisted data.json
    */
-  private async readDateSettingsFromFile(): Promise<{
-    setDoneDate: boolean;
-    setCancelledDate: boolean;
-  }> {
+  private async readWriteSettingsFromFile(): Promise<WriteSettings> {
     try {
       const path = `${this.app.vault.configDir}/plugins/obsidian-tasks-plugin/data.json`;
       const raw = await this.app.vault.adapter.read(path);
       const parsed = JSON.parse(raw) as {
         setDoneDate?: boolean;
         setCancelledDate?: boolean;
+        taskFormat?: string;
       };
       return {
         setDoneDate: parsed.setDoneDate ?? false,
         setCancelledDate: parsed.setCancelledDate ?? false,
+        taskFormat: resolveTaskFormat(parsed.taskFormat),
       };
     } catch {
       // If we can't read the file, default to false (no dates)
-      return { setDoneDate: false, setCancelledDate: false };
+      return {
+        setDoneDate: false,
+        setCancelledDate: false,
+        taskFormat: DEFAULT_TASK_FORMAT,
+      };
     }
   }
 
