@@ -15,6 +15,7 @@ A Kanban board view plugin for Obsidian that displays Tasks in a visual board la
 - **Filtering**: Search bar for title and tags, plus full Tasks-style query editing
 - **Drag & Drop**: Move tasks between columns to change their status
 - **Tasks Integration**: Listens to Tasks plugin events for real-time updates
+- **Task Format Aware**: Writes done/cancelled dates in whichever format Tasks' own **Task Format** setting specifies — emoji (`✅ 2026-08-04`) or Dataview (`[completion:: 2026-08-04]`)
 - **Click to Open**: Click on any task card to open the source file
 
 ## Installation
