@@ -1,4 +1,10 @@
-import { App, type ButtonComponent, PluginSettingTab, Setting } from "obsidian";
+import {
+  App,
+  type ButtonComponent,
+  PluginSettingTab,
+  Setting,
+  type SettingDefinitionItem,
+} from "obsidian";
 
 import { parseQuery } from "../query/boardQuery";
 import { createSavedBoard } from "../query/savedBoards";
@@ -44,6 +50,124 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
   constructor(app: App, plugin: TasksKanbanPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    const data = this.plugin.getPluginData();
+
+    return [
+      {
+        type: "group",
+        heading: "Base board",
+        items: [
+          {
+            name: "Base query",
+            desc: "The query is applied on top of every board; saved boards are merged with it. One instruction per line.",
+            aliases: data.baseQuery.split("\n").filter((l) => l.trim()),
+            control: {
+              type: "textarea",
+              key: "baseQuery",
+              placeholder: QUERY_PLACEHOLDER,
+            },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: "Saved boards",
+        items: data.savedBoards.flatMap((board) => [
+          {
+            name: board.name,
+            desc: "Board name",
+            control: {
+              type: "text",
+              key: `savedBoardName-${board.id}`,
+            },
+          },
+          {
+            name: "Query",
+            desc: "One instruction per line. This query is merged with the base query.",
+            aliases: board.query
+              ? board.query.split("\n").filter((l) => l.trim())
+              : [],
+            control: {
+              type: "textarea",
+              key: `savedBoardQuery-${board.id}`,
+              placeholder: QUERY_PLACEHOLDER,
+            },
+          },
+        ]),
+      },
+    ];
+  }
+
+  getControlValue(key: string): unknown {
+    const data = this.plugin.getPluginData();
+    if (key === "baseQuery") {
+      return data.baseQuery;
+    }
+    if (key === "baseColumnsEnabled") {
+      return data.baseColumns.length > 0;
+    }
+    if (key.startsWith("savedBoardName-")) {
+      const boardId = key.replace("savedBoardName-", "");
+      const board = data.savedBoards.find((b) => b.id === boardId);
+      return board?.name ?? "";
+    }
+    if (key.startsWith("savedBoardQuery-")) {
+      const boardId = key.replace("savedBoardQuery-", "");
+      const board = data.savedBoards.find((b) => b.id === boardId);
+      return board?.query ?? "";
+    }
+    return undefined;
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    const data = this.plugin.getPluginData();
+    if (key === "baseQuery") {
+      await this.plugin.saveSettings(
+        value as string,
+        data.baseColumns,
+        data.savedBoards,
+      );
+      return;
+    }
+    if (key === "baseColumnsEnabled") {
+      const enabled = value as boolean;
+      const newColumns = enabled
+        ? [{ id: newColumnId(), title: "", symbols: [] }]
+        : [];
+      await this.plugin.saveSettings(
+        data.baseQuery,
+        newColumns,
+        data.savedBoards,
+      );
+      return;
+    }
+    if (key.startsWith("savedBoardName-")) {
+      const boardId = key.replace("savedBoardName-", "");
+      const savedBoards = data.savedBoards.map((b) =>
+        b.id === boardId ? { ...b, name: value as string } : b,
+      );
+      await this.plugin.saveSettings(
+        data.baseQuery,
+        data.baseColumns,
+        savedBoards,
+      );
+      return;
+    }
+    if (key.startsWith("savedBoardQuery-")) {
+      const boardId = key.replace("savedBoardQuery-", "");
+      const savedBoards = data.savedBoards.map((b) =>
+        b.id === boardId ? { ...b, query: value as string } : b,
+      );
+      await this.plugin.saveSettings(
+        data.baseQuery,
+        data.baseColumns,
+        savedBoards,
+      );
+      return;
+    }
   }
 
   display(): void {
