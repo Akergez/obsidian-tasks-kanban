@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.3](https://github.com/Djiit/obsidian-tasks-kanban/compare/0.10.2...0.10.3) (2026-08-10)
+
+
+### Bug Fixes
+
+* implement getSettingDefinitions for recent obsidian versions ([5e00163](https://github.com/Djiit/obsidian-tasks-kanban/commit/5e001633abff638e93d91e9b9abec9705e5d48d5))
+* **updater:** write done and cancelled dates in the configured task format ([eb8b850](https://github.com/Djiit/obsidian-tasks-kanban/commit/eb8b8506c59cd49437c0193a813e530e8a5be929))
+
 ## [0.10.2](https://github.com/Djiit/obsidian-tasks-kanban/compare/0.10.1...0.10.2) (2026-08-06)
 
 
