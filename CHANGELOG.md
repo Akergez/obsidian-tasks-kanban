@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.12.0...0.13.0) (2026-08-24)
+
+
+### Features
+
+* new look ([e70541d](https://github.com/Akergez/obsidian-tasks-kanban/commit/e70541dde3aeb727d5f8c5bfaaad6cd8f750157d))
+
 ## [0.12.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.11.0...0.12.0) (2026-08-24)
 
 
