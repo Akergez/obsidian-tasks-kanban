@@ -22,10 +22,9 @@ import {
   isValidColumnDate,
   todayISO,
 } from "../utils/dateColumns";
-import type { DateField } from "../utils/dateFilter";
+import { type DateField, DEFAULT_DATE_FIELD } from "../utils/dateFilter";
 import type { TaskFormatSetting } from "../utils/taskFormat";
 import type TasksKanbanPlugin from "../main";
-import type { SettingsSlice } from "../main";
 
 const DOCS_URL =
   "https://github.com/Djiit/obsidian-tasks-kanban/blob/main/docs/query-syntax.md";
@@ -159,211 +158,22 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  /**
+   * Obsidian 1.13 renders a settings tab declaratively from these definitions
+   * and then **does not call {@link display}** unless the array is empty.
+   *
+   * This pane cannot be expressed declaratively: a board is a file, so the
+   * boards a user edits here are only known after an async read of the vault,
+   * and each board carries a variable set of controls (a status board's symbol
+   * partitions, a date board's days) plus validation that gates one shared Save.
+   * So we opt out on purpose and keep rendering imperatively in `display`.
+   *
+   * The cost is that these settings do not show up in Obsidian's settings
+   * search. Returning anything here instead would silently hide every
+   * per-board setting, which is how they went missing in the first place.
+   */
   getSettingDefinitions(): SettingDefinitionItem[] {
-    const data = this.plugin.getPluginData();
-
-    return [
-      {
-        type: "group",
-        heading: "Tasks integration",
-        items: [
-          {
-            name: "Task format",
-            desc: TASK_FORMAT_DESC,
-            control: {
-              type: "dropdown",
-              key: "taskFormat",
-              options: TASK_FORMAT_LABELS,
-            },
-          },
-        ],
-      },
-      {
-        type: "group",
-        heading: "Base board",
-        items: [
-          {
-            name: "Board type",
-            desc: BOARD_TYPE_DESC,
-            control: {
-              type: "dropdown",
-              key: "baseBoardType",
-              options: BOARD_TYPE_LABELS,
-            },
-          },
-          {
-            name: "Base query",
-            desc: "The query is applied on top of every board; saved boards are merged with it. One instruction per line.",
-            aliases: data.baseQuery.split("\n").filter((l) => l.trim()),
-            control: {
-              type: "textarea",
-              key: "baseQuery",
-              placeholder: QUERY_PLACEHOLDER,
-            },
-          },
-          {
-            name: "Column tag prefix",
-            desc: TAG_PREFIX_DESC,
-            control: {
-              type: "text",
-              key: "baseColumnTagPrefix",
-              placeholder: "sprint",
-            },
-          },
-          {
-            name: "Column order",
-            desc: COLUMN_ORDER_DESC,
-            control: {
-              type: "text",
-              key: "baseColumnOrder",
-              placeholder: "todo, doing, done",
-            },
-          },
-          {
-            name: "Date field",
-            desc: DATE_FIELD_DESC,
-            control: {
-              type: "dropdown",
-              key: "baseDateField",
-              options: dateFieldOptions(),
-            },
-          },
-          {
-            name: "Card colours",
-            desc: CARD_COLORS_DESC,
-            control: {
-              type: "textarea",
-              key: "baseCardColors",
-              placeholder: CARD_COLORS_PLACEHOLDER,
-            },
-          },
-        ],
-      },
-      {
-        type: "group",
-        heading: "Boards",
-        items: [
-          {
-            name: "Boards folder",
-            desc: `Vault folder holding the .${BOARD_EXTENSION} board files. Empty: the vault root.`,
-            control: {
-              type: "text",
-              key: "boardsFolder",
-              placeholder: "Kanban",
-            },
-          },
-          {
-            name: "Weekly planner folder",
-            desc: WEEKLY_FOLDER_DESC,
-            control: {
-              type: "text",
-              key: "weeklyPlannerFolder",
-              placeholder: "Kanban/Weekly",
-            },
-          },
-        ],
-      },
-    ];
-  }
-
-  getControlValue(key: string): unknown {
-    const data = this.plugin.getPluginData();
-    if (key === "taskFormat") {
-      return data.taskFormat;
-    }
-    if (key === "baseQuery") {
-      return data.baseQuery;
-    }
-    if (key === "baseBoardType") {
-      return data.baseBoardType;
-    }
-    if (key === "baseColumnsEnabled") {
-      return data.baseColumns.length > 0;
-    }
-    if (key === "baseColumnTagPrefix") {
-      return data.baseColumnTagPrefix;
-    }
-    if (key === "baseColumnOrder") {
-      return data.baseColumnOrder;
-    }
-    if (key === "baseDateField") {
-      return data.baseDateField;
-    }
-    if (key === "baseCardColors") {
-      return data.baseCardColors;
-    }
-    if (key === "boardsFolder") {
-      return data.boardsFolder;
-    }
-    if (key === "weeklyPlannerFolder") {
-      return data.weeklyPlannerFolder;
-    }
-    return undefined;
-  }
-
-  async setControlValue(key: string, value: unknown): Promise<void> {
-    const data = this.plugin.getPluginData();
-    // Every control commits the whole settings slice; `patch` is the one field
-    // it changes, laid over the currently persisted values.
-    const commit = (patch: Partial<SettingsSlice>) =>
-      this.plugin.saveSettings({
-        baseQuery: data.baseQuery,
-        taskFormat: data.taskFormat,
-        baseBoardType: data.baseBoardType,
-        baseColumns: data.baseColumns,
-        baseColumnTagPrefix: data.baseColumnTagPrefix,
-        baseColumnOrder: data.baseColumnOrder,
-        baseDateField: data.baseDateField,
-        baseDateColumns: data.baseDateColumns,
-        baseCardColors: data.baseCardColors,
-        boardsFolder: data.boardsFolder,
-        weeklyPlannerFolder: data.weeklyPlannerFolder,
-        ...patch,
-      });
-    if (key === "taskFormat") {
-      await commit({ taskFormat: value as TaskFormatSetting });
-      return;
-    }
-    if (key === "baseQuery") {
-      await commit({ baseQuery: value as string });
-      return;
-    }
-    if (key === "baseBoardType") {
-      await commit({ baseBoardType: value as BoardType });
-      return;
-    }
-    if (key === "baseColumnsEnabled") {
-      await commit({
-        baseColumns: value
-          ? [{ id: newColumnId(), title: "", symbols: [] }]
-          : [],
-      });
-      return;
-    }
-    if (key === "baseColumnTagPrefix") {
-      await commit({ baseColumnTagPrefix: value as string });
-      return;
-    }
-    if (key === "baseColumnOrder") {
-      await commit({ baseColumnOrder: value as string });
-      return;
-    }
-    if (key === "baseDateField") {
-      await commit({ baseDateField: value as DateField });
-      return;
-    }
-    if (key === "baseCardColors") {
-      await commit({ baseCardColors: value as string });
-      return;
-    }
-    if (key === "boardsFolder") {
-      await commit({ boardsFolder: (value as string).trim() });
-      return;
-    }
-    if (key === "weeklyPlannerFolder") {
-      await commit({ weeklyPlannerFolder: (value as string).trim() });
-      return;
-    }
+    return [];
   }
 
   display(): void {
@@ -1064,7 +874,7 @@ function emptySlice(): ColumnSlice {
     boardType: "status",
     columnTagPrefix: "",
     columnOrder: "",
-    dateField: DATE_FIELDS[0],
+    dateField: DEFAULT_DATE_FIELD,
     dateColumns: [],
     columns: [],
   };
