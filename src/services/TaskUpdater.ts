@@ -2,6 +2,7 @@ import { type App, TFile } from "obsidian";
 import type { Task } from "./TasksIntegration";
 import type { TasksIntegration } from "./TasksIntegration";
 import { FIELD_SYNTAX, resolveTaskFormat } from "../utils/taskFormat";
+import { setColumnTag } from "../utils/tagColumns";
 
 /**
  * Service for updating task status in source files
@@ -24,29 +25,10 @@ export class TaskUpdater {
     task: Task,
     newStatusSymbol: string,
   ): Promise<boolean> {
-    const filePath = task.taskLocation?.path;
-    const lineNumber = task.taskLocation?.lineNumber;
-    if (!filePath || lineNumber === undefined) {
-      return false;
-    }
-
-    const file = this.app.vault.getAbstractFileByPath(filePath);
-    if (!file || !(file instanceof TFile)) {
-      return false;
-    }
-
-    try {
-      const content = await this.app.vault.read(file);
-      const lines = content.split("\n");
-
-      if (lineNumber < 0 || lineNumber >= lines.length) {
-        return false;
-      }
-
-      const line = lines[lineNumber];
+    return this.rewriteTaskLine(task, async (line) => {
       const match = line.match(/^(\s*- \[)[^\]]*(]\s*.*)$/);
       if (!match) {
-        return false;
+        return null;
       }
 
       // Get Tasks plugin write settings
@@ -101,12 +83,66 @@ export class TaskUpdater {
         updatedLine = updatedLine.replace(syntax.cancelledDate.strip, "");
       }
 
+      return updatedLine;
+    });
+  }
+
+  /**
+   * Move a task between tag columns: rewrite its line so it carries exactly the
+   * column tag `#<tagPrefix>_<tag>`, or none when `tag` is "" (the catch-all
+   * column). The status symbol is left untouched — under tag columns the board
+   * no longer owns it.
+   */
+  async updateTaskColumnTag(
+    task: Task,
+    tagPrefix: string,
+    tag: string,
+  ): Promise<boolean> {
+    return this.rewriteTaskLine(task, (line) =>
+      setColumnTag(line, tagPrefix, tag),
+    );
+  }
+
+  /**
+   * Read the task's source line, hand it to `transform`, and write the result
+   * back. Returns false — without touching the file — when the task has no
+   * usable location, the file is missing, the line is out of range, or
+   * `transform` returns null (it could not make sense of the line).
+   */
+  private async rewriteTaskLine(
+    task: Task,
+    transform: (line: string) => string | null | Promise<string | null>,
+  ): Promise<boolean> {
+    const filePath = task.taskLocation?.path;
+    const lineNumber = task.taskLocation?.lineNumber;
+    if (!filePath || lineNumber === undefined) {
+      return false;
+    }
+
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!file || !(file instanceof TFile)) {
+      return false;
+    }
+
+    try {
+      const content = await this.app.vault.read(file);
+      const lines = content.split("\n");
+
+      if (lineNumber < 0 || lineNumber >= lines.length) {
+        return false;
+      }
+
+      const updatedLine = await transform(lines[lineNumber]);
+      if (updatedLine === null) {
+        return false;
+      }
+
       lines[lineNumber] = updatedLine;
 
       await this.app.vault.modify(file, lines.join("\n"));
       return true;
     } catch (error) {
-      console.error("Failed to update task status:", error);
+      console.error("Failed to update task line:", error);
       return false;
     }
   }

@@ -9,10 +9,8 @@ import {
   DEFAULT_PLUGIN_DATA,
   type BoardOwnState,
   type BoardStatePersistence,
-  type ColumnConfig,
   type LegacyBoardState,
   type PluginData,
-  type SavedBoard,
 } from "./types/persistence";
 import {
   createSavedBoard,
@@ -27,6 +25,20 @@ import {
 } from "./query/boardQuery";
 
 const VIEW_TYPE = "tasks-board";
+
+/**
+ * The slice of {@link PluginData} the settings tab owns and commits as a unit.
+ * Everything else (fold state, per-board queries edited on the board itself) is
+ * written by the boards through their {@link BoardStatePersistence}.
+ */
+export type SettingsSlice = Pick<
+  PluginData,
+  | "baseQuery"
+  | "baseColumns"
+  | "baseColumnTagPrefix"
+  | "baseColumnOrder"
+  | "savedBoards"
+>;
 
 /**
  * Build a canonical query string from pre-query persisted fields
@@ -88,6 +100,8 @@ export default class TasksKanbanPlugin extends Plugin {
           collapsedColumns: this.data.baseCollapsedColumns,
           collapsedGroups: this.data.baseCollapsedGroups,
           columns: this.data.baseColumns,
+          columnTagPrefix: this.data.baseColumnTagPrefix,
+          columnOrder: this.data.baseColumnOrder,
         }),
         save: (state: BoardOwnState) => {
           this.data = {
@@ -110,6 +124,8 @@ export default class TasksKanbanPlugin extends Plugin {
           collapsedColumns: saved?.collapsedColumns ?? [],
           collapsedGroups: saved?.collapsedGroups ?? [],
           columns: saved?.columns ?? [],
+          columnTagPrefix: saved?.columnTagPrefix ?? "",
+          columnOrder: saved?.columnOrder ?? "",
         };
       },
       save: (state: BoardOwnState) => {
@@ -133,15 +149,12 @@ export default class TasksKanbanPlugin extends Plugin {
   }
 
   /**
-   * Persist the base query and the saved-board list (from the settings tab), then
-   * refresh open boards and close any whose saved board was deleted.
+   * Persist the settings-owned slice of the plugin data (from the settings tab),
+   * then refresh open boards and close any whose saved board was deleted.
    */
-  async saveSettings(
-    baseQuery: string,
-    baseColumns: ColumnConfig[],
-    savedBoards: SavedBoard[],
-  ) {
-    this.data = { ...this.data, baseQuery, baseColumns, savedBoards };
+  async saveSettings(settings: SettingsSlice) {
+    const { savedBoards } = settings;
+    this.data = { ...this.data, ...settings };
     await this.saveData(this.data);
 
     const validIds = new Set([BASE_BOARD_ID, ...savedBoards.map((b) => b.id)]);
@@ -250,6 +263,10 @@ export default class TasksKanbanPlugin extends Plugin {
       baseCollapsedGroups:
         data?.baseCollapsedGroups ?? DEFAULT_PLUGIN_DATA.baseCollapsedGroups,
       baseColumns: data?.baseColumns ?? DEFAULT_PLUGIN_DATA.baseColumns,
+      baseColumnTagPrefix:
+        data?.baseColumnTagPrefix ?? DEFAULT_PLUGIN_DATA.baseColumnTagPrefix,
+      baseColumnOrder:
+        data?.baseColumnOrder ?? DEFAULT_PLUGIN_DATA.baseColumnOrder,
       // `savedQueries` is the pre-rename key; same element shape, so read it as
       // a fallback to migrate existing data files to `savedBoards`.
       savedBoards:

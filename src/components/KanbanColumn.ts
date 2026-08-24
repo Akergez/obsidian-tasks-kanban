@@ -2,6 +2,7 @@ import type { Task } from "../services/TasksIntegration";
 import { TasksIntegration } from "../services/TasksIntegration";
 import { KanbanCard } from "./KanbanCard";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
+import { columnCollects } from "../utils/tagColumns";
 
 /**
  * The Kanban column component
@@ -195,13 +196,24 @@ export class KanbanColumn {
           t.taskLocation?.lineNumber === lineNumber,
       );
 
-      if (!task || this.config.symbols.includes(task.status.symbol)) {
-        // Dropped into the column it already belongs to (its symbol is one this
-        // column collects) — no-op. Otherwise write the column's drop symbol,
-        // which may change the task within a status type (e.g. '/' → 'A').
+      if (!task || columnCollects(this.config, task)) {
+        // Dropped into the column it already belongs to — no-op.
         return;
       }
 
+      if (this.config.tagPrefix !== undefined) {
+        // Tag columns: move the task by rewriting its `#<prefix>_<column>` tag
+        // (an empty tag means the catch-all column, i.e. remove it).
+        void this.tasksIntegration.taskUpdater.updateTaskColumnTag(
+          task,
+          this.config.tagPrefix,
+          this.config.tag ?? "",
+        );
+        return;
+      }
+
+      // Status columns: write the column's drop symbol, which may change the
+      // task within a status type (e.g. '/' → 'A').
       void this.tasksIntegration.taskUpdater.updateTaskStatus(
         task,
         this.config.dropSymbol,

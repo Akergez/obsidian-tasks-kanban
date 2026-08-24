@@ -22,6 +22,8 @@ export interface ColumnConfig {
  *
  * `columns` (when non-empty) overrides the default status columns with custom
  * symbol columns; absent/empty means the default status columns are used.
+ * `columnTagPrefix`, when set, wins over both: columns are then discovered from
+ * the tasks' `#<prefix>_<column>` tags (see buildTagColumns in utils/tagColumns).
  */
 export interface SavedBoard {
   /** Stable identifier (crypto.randomUUID()), used to match open boards. */
@@ -36,6 +38,10 @@ export interface SavedBoard {
   collapsedGroups?: string[];
   /** Custom columns; absent/empty ⇒ default status columns. */
   columns?: ColumnConfig[];
+  /** Tag columns: shared prefix of the board's `#<prefix>_<column>` tags; "" ⇒ off. */
+  columnTagPrefix?: string;
+  /** Tag columns: comma-separated column parts, leftmost first; "" ⇒ alphabetical. */
+  columnOrder?: string;
 }
 
 /**
@@ -53,6 +59,10 @@ export interface PluginData {
   baseCollapsedGroups: string[];
   /** Custom columns for the base-only board; empty ⇒ default status columns. */
   baseColumns: ColumnConfig[];
+  /** Tag-column prefix for the base-only board; "" ⇒ status columns. */
+  baseColumnTagPrefix: string;
+  /** Tag-column order for the base-only board; "" ⇒ alphabetical. */
+  baseColumnOrder: string;
   /** User-managed saved boards (views). */
   savedBoards: SavedBoard[];
 }
@@ -65,6 +75,8 @@ export const DEFAULT_PLUGIN_DATA: PluginData = {
   baseCollapsedColumns: [],
   baseCollapsedGroups: [],
   baseColumns: [],
+  baseColumnTagPrefix: "",
+  baseColumnOrder: "",
   savedBoards: [],
 };
 
@@ -98,6 +110,10 @@ export interface BoardOwnState {
   collapsedGroups: string[];
   /** Custom columns; empty ⇒ default status columns. */
   columns: ColumnConfig[];
+  /** Tag-column prefix; "" ⇒ status columns. Owned by settings, never written by a board. */
+  columnTagPrefix: string;
+  /** Tag-column order; "" ⇒ alphabetical. Owned by settings, never written by a board. */
+  columnOrder: string;
 }
 
 /**

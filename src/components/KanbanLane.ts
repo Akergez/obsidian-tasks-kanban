@@ -2,6 +2,7 @@ import { type Task } from "../services/TasksIntegration";
 import { TasksIntegration } from "../services/TasksIntegration";
 import { KanbanColumn } from "./KanbanColumn";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
+import { columnCollects } from "../utils/tagColumns";
 
 /**
  * A single swimlane: an optional header (the group label) above a horizontal row
@@ -72,14 +73,15 @@ export class KanbanLane {
     this.applyCollapsed();
   }
 
-  /** Distribute this lane's tasks across its columns by status symbol. A task
-   *  whose symbol is in no column is not shown (consistent with query filtering). */
+  /** Distribute this lane's tasks across its columns (by status symbol, or by
+   *  column tag when the board uses tag columns). A task no column collects is
+   *  not shown (consistent with query filtering). */
   updateTasks(tasks: Task[]): void {
     for (const column of this.columns) {
-      const statusTasks = tasks.filter((task) =>
-        column.config.symbols.includes(task.status.symbol),
+      const columnTasks = tasks.filter((task) =>
+        columnCollects(column.config, task),
       );
-      column.updateTasks(statusTasks);
+      column.updateTasks(columnTasks);
     }
   }
 

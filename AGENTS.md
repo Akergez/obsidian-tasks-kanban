@@ -102,10 +102,12 @@ The plugin integrates with the [Tasks](https://github.com/obsidian-tasks-group/o
 
 ### Kanban Columns
 
-Default columns (configurable in `KanbanBoard.ts`):
-- **Todo**: status symbol ` ` (space)
-- **In Progress**: status symbol `/`
-- **Done**: status symbol `x`
+A board's columns come from one of two sources, resolved in `KanbanBoard.renderLanes`:
+
+- **Status columns** (`utils/statusColumns.ts`) — the default. One column per status type, or a user-defined partition over status symbols. A drop writes the column's `dropSymbol`.
+- **Tag columns** (`utils/tagColumns.ts`) — used when the board has a `columnTagPrefix`. Columns are discovered from the tasks' `#<prefix>_<column>` tags: those named in the board's `columnOrder` come first in that order, the rest follow alphabetically, and a catch-all for untagged tasks leads. A drop rewrites the tag via `TaskUpdater.updateTaskColumnTag` and leaves the status alone.
+
+`columnCollects` (in `tagColumns.ts`) is the single matcher for both modes; `KanbanLane` and `KanbanColumn`'s drop handler go through it.
 
 ## Testing
 

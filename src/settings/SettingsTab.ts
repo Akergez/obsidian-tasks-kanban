@@ -11,6 +11,7 @@ import { createSavedBoard } from "../query/savedBoards";
 import type { ColumnConfig, SavedBoard } from "../types/persistence";
 import type { StatusInfo } from "../services/TasksIntegration";
 import type TasksKanbanPlugin from "../main";
+import type { SettingsSlice } from "../main";
 
 const DOCS_URL =
   "https://github.com/Djiit/obsidian-tasks-kanban/blob/main/docs/query-syntax.md";
@@ -22,6 +23,18 @@ const QUERY_PLACEHOLDER = [
   "sort by due reverse",
   "group by priority",
 ].join("\n");
+
+/** Shared description of the column-tag-prefix control (pane + settings search). */
+const TAG_PREFIX_DESC =
+  "Empty: columns come from task statuses. Set (e.g. 'sprint'): one column per " +
+  "#sprint_<column> tag found, ordered alphabetically, plus a 'No column' column. " +
+  "Dragging a card rewrites the tag.";
+
+/** Shared description of the column-order control (pane + settings search). */
+const COLUMN_ORDER_DESC =
+  "Comma-separated column names (the part after the prefix), leftmost first — " +
+  "e.g. 'todo, doing, done'. Columns not listed follow alphabetically. A listed " +
+  "column shows up even when no task carries its tag yet. Empty: all alphabetical.";
 
 /** A unique id generator for new custom columns. */
 function newColumnId(): string {
@@ -41,6 +54,8 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
   // Working copies, committed on Save.
   private baseQuery = "";
   private baseColumns: ColumnConfig[] = [];
+  private baseColumnTagPrefix = "";
+  private baseColumnOrder = "";
   private savedBoards: SavedBoard[] = [];
 
   // Parse-error state, keyed by field ("base" or a saved-board id).
@@ -70,6 +85,24 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
               placeholder: QUERY_PLACEHOLDER,
             },
           },
+          {
+            name: "Column tag prefix",
+            desc: TAG_PREFIX_DESC,
+            control: {
+              type: "text",
+              key: "baseColumnTagPrefix",
+              placeholder: "sprint",
+            },
+          },
+          {
+            name: "Column order",
+            desc: COLUMN_ORDER_DESC,
+            control: {
+              type: "text",
+              key: "baseColumnOrder",
+              placeholder: "todo, doing, done",
+            },
+          },
         ],
       },
       {
@@ -96,6 +129,24 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
               placeholder: QUERY_PLACEHOLDER,
             },
           },
+          {
+            name: "Column tag prefix",
+            desc: TAG_PREFIX_DESC,
+            control: {
+              type: "text",
+              key: `savedBoardTagPrefix-${board.id}`,
+              placeholder: "sprint",
+            },
+          },
+          {
+            name: "Column order",
+            desc: COLUMN_ORDER_DESC,
+            control: {
+              type: "text",
+              key: `savedBoardColumnOrder-${board.id}`,
+              placeholder: "todo, doing, done",
+            },
+          },
         ]),
       },
     ];
@@ -109,6 +160,12 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     if (key === "baseColumnsEnabled") {
       return data.baseColumns.length > 0;
     }
+    if (key === "baseColumnTagPrefix") {
+      return data.baseColumnTagPrefix;
+    }
+    if (key === "baseColumnOrder") {
+      return data.baseColumnOrder;
+    }
     if (key.startsWith("savedBoardName-")) {
       const boardId = key.replace("savedBoardName-", "");
       const board = data.savedBoards.find((b) => b.id === boardId);
@@ -119,53 +176,95 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       const board = data.savedBoards.find((b) => b.id === boardId);
       return board?.query ?? "";
     }
+    if (key.startsWith("savedBoardTagPrefix-")) {
+      const boardId = key.replace("savedBoardTagPrefix-", "");
+      const board = data.savedBoards.find((b) => b.id === boardId);
+      return board?.columnTagPrefix ?? "";
+    }
+    if (key.startsWith("savedBoardColumnOrder-")) {
+      const boardId = key.replace("savedBoardColumnOrder-", "");
+      const board = data.savedBoards.find((b) => b.id === boardId);
+      return board?.columnOrder ?? "";
+    }
     return undefined;
   }
 
   async setControlValue(key: string, value: unknown): Promise<void> {
     const data = this.plugin.getPluginData();
+    // Every control commits the whole settings slice; `patch` is the one field
+    // it changes, laid over the currently persisted values.
+    const commit = (patch: Partial<SettingsSlice>) =>
+      this.plugin.saveSettings({
+        baseQuery: data.baseQuery,
+        baseColumns: data.baseColumns,
+        baseColumnTagPrefix: data.baseColumnTagPrefix,
+        baseColumnOrder: data.baseColumnOrder,
+        savedBoards: data.savedBoards,
+        ...patch,
+      });
+    /** Apply `change` to the saved board `key` addresses, keeping the rest. */
+    const patchBoard = (
+      prefix: string,
+      change: (board: SavedBoard) => SavedBoard,
+    ) => {
+      const boardId = key.replace(prefix, "");
+      return data.savedBoards.map((b) => (b.id === boardId ? change(b) : b));
+    };
+
     if (key === "baseQuery") {
-      await this.plugin.saveSettings(
-        value as string,
-        data.baseColumns,
-        data.savedBoards,
-      );
+      await commit({ baseQuery: value as string });
       return;
     }
     if (key === "baseColumnsEnabled") {
-      const enabled = value as boolean;
-      const newColumns = enabled
-        ? [{ id: newColumnId(), title: "", symbols: [] }]
-        : [];
-      await this.plugin.saveSettings(
-        data.baseQuery,
-        newColumns,
-        data.savedBoards,
-      );
+      await commit({
+        baseColumns: value
+          ? [{ id: newColumnId(), title: "", symbols: [] }]
+          : [],
+      });
+      return;
+    }
+    if (key === "baseColumnTagPrefix") {
+      await commit({ baseColumnTagPrefix: value as string });
+      return;
+    }
+    if (key === "baseColumnOrder") {
+      await commit({ baseColumnOrder: value as string });
       return;
     }
     if (key.startsWith("savedBoardName-")) {
-      const boardId = key.replace("savedBoardName-", "");
-      const savedBoards = data.savedBoards.map((b) =>
-        b.id === boardId ? { ...b, name: value as string } : b,
-      );
-      await this.plugin.saveSettings(
-        data.baseQuery,
-        data.baseColumns,
-        savedBoards,
-      );
+      await commit({
+        savedBoards: patchBoard("savedBoardName-", (b) => ({
+          ...b,
+          name: value as string,
+        })),
+      });
       return;
     }
     if (key.startsWith("savedBoardQuery-")) {
-      const boardId = key.replace("savedBoardQuery-", "");
-      const savedBoards = data.savedBoards.map((b) =>
-        b.id === boardId ? { ...b, query: value as string } : b,
-      );
-      await this.plugin.saveSettings(
-        data.baseQuery,
-        data.baseColumns,
-        savedBoards,
-      );
+      await commit({
+        savedBoards: patchBoard("savedBoardQuery-", (b) => ({
+          ...b,
+          query: value as string,
+        })),
+      });
+      return;
+    }
+    if (key.startsWith("savedBoardTagPrefix-")) {
+      await commit({
+        savedBoards: patchBoard("savedBoardTagPrefix-", (b) => ({
+          ...b,
+          columnTagPrefix: value as string,
+        })),
+      });
+      return;
+    }
+    if (key.startsWith("savedBoardColumnOrder-")) {
+      await commit({
+        savedBoards: patchBoard("savedBoardColumnOrder-", (b) => ({
+          ...b,
+          columnOrder: value as string,
+        })),
+      });
       return;
     }
   }
@@ -178,6 +277,8 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       ...c,
       symbols: [...c.symbols],
     }));
+    this.baseColumnTagPrefix = data.baseColumnTagPrefix;
+    this.baseColumnOrder = data.baseColumnOrder;
     this.savedBoards = data.savedBoards.map((b) => ({
       ...b,
       columns: (b.columns ?? []).map((c) => ({
@@ -206,9 +307,21 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     this.renderQueryField(containerEl, "base", this.baseQuery, (value) => {
       this.baseQuery = value;
     });
-    this.renderColumnsSection(containerEl, this.baseColumns, (next) => {
-      this.baseColumns = next;
-    });
+    this.renderTagColumnsSection(
+      containerEl,
+      { prefix: this.baseColumnTagPrefix, order: this.baseColumnOrder },
+      (value) => {
+        this.baseColumnTagPrefix = value;
+      },
+      (value) => {
+        this.baseColumnOrder = value;
+      },
+    );
+    if (!this.baseColumnTagPrefix) {
+      this.renderColumnsSection(containerEl, this.baseColumns, (next) => {
+        this.baseColumns = next;
+      });
+    }
 
     new Setting(containerEl).setName("Saved boards").setHeading();
 
@@ -261,9 +374,67 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     this.renderQueryField(containerEl, board.id, board.query, (value) => {
       board.query = value;
     });
-    this.renderColumnsSection(containerEl, board.columns ?? [], (next) => {
-      board.columns = next;
-    });
+    this.renderTagColumnsSection(
+      containerEl,
+      { prefix: board.columnTagPrefix ?? "", order: board.columnOrder ?? "" },
+      (value) => {
+        board.columnTagPrefix = value;
+      },
+      (value) => {
+        board.columnOrder = value;
+      },
+    );
+    if (!board.columnTagPrefix) {
+      this.renderColumnsSection(containerEl, board.columns ?? [], (next) => {
+        board.columns = next;
+      });
+    }
+  }
+
+  /**
+   * Render the tag-column fields for one board: the prefix, plus the column
+   * order once the prefix is set.
+   *
+   * A non-empty prefix switches the board to tag columns: one column per
+   * distinct `#<prefix>_<column>` tag found on the tasks, plus a catch-all for
+   * tasks carrying none, and dropping a card rewrites that tag instead of the
+   * status symbol. Leaving it empty keeps the status columns, so the prefix
+   * field re-renders the pane to show or hide what depends on it.
+   */
+  private renderTagColumnsSection(
+    containerEl: HTMLElement,
+    values: { prefix: string; order: string },
+    onPrefixChange: (value: string) => void,
+    onOrderChange: (value: string) => void,
+  ): void {
+    new Setting(containerEl)
+      .setName("Column tag prefix")
+      .setDesc(TAG_PREFIX_DESC)
+      .addText((text) => {
+        text
+          .setPlaceholder("sprint")
+          .setValue(values.prefix)
+          .onChange((value) => {
+            onPrefixChange(normalizeTagPrefix(value));
+          });
+        // Showing/hiding the fields below needs a full re-render, which would
+        // blur the field mid-typing — so only do it once the user leaves.
+        text.inputEl.addEventListener("blur", () => this.render());
+      });
+
+    if (!values.prefix) {
+      return;
+    }
+
+    new Setting(containerEl)
+      .setName("Column order")
+      .setDesc(COLUMN_ORDER_DESC)
+      .addText((text) => {
+        text
+          .setPlaceholder("todo, doing, done")
+          .setValue(values.order)
+          .onChange(onOrderChange);
+      });
   }
 
   /**
@@ -485,12 +656,26 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     const clean = (columns: ColumnConfig[] | undefined): ColumnConfig[] =>
       (columns ?? []).filter((c) => c.symbols.length > 0);
 
-    await this.plugin.saveSettings(
-      this.baseQuery,
-      clean(this.baseColumns),
-      this.savedBoards.map((b) => ({ ...b, columns: clean(b.columns) })),
-    );
+    await this.plugin.saveSettings({
+      baseQuery: this.baseQuery,
+      baseColumns: clean(this.baseColumns),
+      baseColumnTagPrefix: this.baseColumnTagPrefix,
+      baseColumnOrder: this.baseColumnOrder,
+      savedBoards: this.savedBoards.map((b) => ({
+        ...b,
+        columns: clean(b.columns),
+      })),
+    });
   }
+}
+
+/**
+ * Normalise a user-typed column-tag prefix: the code builds tags as
+ * `#<prefix>_<column>`, so drop a leading '#' and any trailing separator the
+ * user typed anyway, and trim whitespace (which no tag can contain).
+ */
+function normalizeTagPrefix(value: string): string {
+  return value.trim().replace(/^#/, "").replace(/_+$/, "");
 }
 
 /** Render a status symbol for display, making whitespace visible. */

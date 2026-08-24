@@ -8,6 +8,7 @@ import { SortBar } from "./SortBar";
 import { GroupBar } from "./GroupBar";
 import { QueryModal } from "./QueryModal";
 import { resolveColumns } from "../utils/statusColumns";
+import { buildTagColumns, parseColumnOrder } from "../utils/tagColumns";
 import { getUniqueTags } from "../utils/searchFilter";
 import { groupTasks, type TaskGroup } from "../utils/groupTasks";
 import {
@@ -58,6 +59,10 @@ export class KanbanBoard {
   private collapsedGroups: Set<string>;
   /** Custom columns for this board; empty ⇒ default status columns. */
   private columnConfigs: ColumnConfig[];
+  /** Tag-column prefix for this board; "" ⇒ status columns. Set in settings. */
+  private columnTagPrefix: string;
+  /** Tag-column order for this board; "" ⇒ alphabetical. Set in settings. */
+  private columnOrder: string;
 
   constructor(
     container: HTMLElement,
@@ -77,6 +82,8 @@ export class KanbanBoard {
     this.collapsedColumns = new Set(initial.collapsedColumns);
     this.collapsedGroups = new Set(initial.collapsedGroups);
     this.columnConfigs = initial.columns;
+    this.columnTagPrefix = initial.columnTagPrefix;
+    this.columnOrder = initial.columnOrder;
 
     // Search, sort, and query-edit controls sit above the board in a shared row.
     const header = this.container.createDiv({ cls: "tasks-kanban-header" });
@@ -167,6 +174,8 @@ export class KanbanBoard {
       collapsedColumns: [...this.collapsedColumns],
       collapsedGroups: [...this.collapsedGroups],
       columns: this.columnConfigs,
+      columnTagPrefix: this.columnTagPrefix,
+      columnOrder: this.columnOrder,
     });
   }
 
@@ -239,6 +248,8 @@ export class KanbanBoard {
     this.collapsedColumns = new Set(state.collapsedColumns);
     this.collapsedGroups = new Set(state.collapsedGroups);
     this.columnConfigs = state.columns;
+    this.columnTagPrefix = state.columnTagPrefix;
+    this.columnOrder = state.columnOrder;
     this.searchBar.setState({
       titleQuery: getTitle(this.boardQuery),
       selectedTags: getTags(this.boardQuery),
@@ -273,12 +284,18 @@ export class KanbanBoard {
    * these structural changes are infrequent). The column set is folded into the
    * lane signature so editing custom columns (which doesn't change group keys)
    * still re-renders.
+   *
+   * Tag columns are discovered from every task the board holds — not from the
+   * filtered ones — so a column doesn't vanish the moment a filter empties it.
    */
   private renderLanes(groups: TaskGroup[]) {
-    const columnConfigs = resolveColumns(
-      this.columnConfigs,
-      this.tasksIntegration.getStatuses(),
-    );
+    const columnConfigs = this.columnTagPrefix
+      ? buildTagColumns(
+          this.allTasks,
+          this.columnTagPrefix,
+          parseColumnOrder(this.columnOrder, this.columnTagPrefix),
+        )
+      : resolveColumns(this.columnConfigs, this.tasksIntegration.getStatuses());
     const columnSignature = columnConfigs
       .map((c) => `${c.id}:${c.symbols.join("")}`)
       .join("|");

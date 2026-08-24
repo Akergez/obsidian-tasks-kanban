@@ -943,4 +943,87 @@ describe("TaskUpdater", () => {
       );
     });
   });
+
+  describe("updateTaskColumnTag", () => {
+    beforeEach(() => {
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+    });
+
+    it("rewrites the column tag without touching the status symbol", async () => {
+      const task = createTask("/", 1);
+      mockApp.vault.read.mockResolvedValue(
+        "# Notes\n- [/] Test task #sprint_todo\n- [ ] Other",
+      );
+
+      const result = await taskUpdater.updateTaskColumnTag(
+        task,
+        "sprint",
+        "doing",
+      );
+
+      expect(result).toBe(true);
+      expect(mockApp.vault.modify).toHaveBeenCalledWith(
+        mockFile,
+        "# Notes\n- [/] Test task #sprint_doing\n- [ ] Other",
+      );
+    });
+
+    it("adds the tag to a task that had none", async () => {
+      const task = createTask(" ", 0);
+      mockApp.vault.read.mockResolvedValue("- [ ] Test task #work");
+
+      const result = await taskUpdater.updateTaskColumnTag(
+        task,
+        "sprint",
+        "todo",
+      );
+
+      expect(result).toBe(true);
+      expect(mockApp.vault.modify).toHaveBeenCalledWith(
+        mockFile,
+        "- [ ] Test task #work #sprint_todo",
+      );
+    });
+
+    it("removes the tag when moving to the catch-all column", async () => {
+      const task = createTask(" ", 0);
+      mockApp.vault.read.mockResolvedValue("- [ ] Test task #sprint_todo");
+
+      const result = await taskUpdater.updateTaskColumnTag(task, "sprint", "");
+
+      expect(result).toBe(true);
+      expect(mockApp.vault.modify).toHaveBeenCalledWith(
+        mockFile,
+        "- [ ] Test task",
+      );
+    });
+
+    it("returns false without writing when the line is out of range", async () => {
+      const task = createTask(" ", 10);
+      mockApp.vault.read.mockResolvedValue("- [ ] Test task");
+
+      const result = await taskUpdater.updateTaskColumnTag(
+        task,
+        "sprint",
+        "todo",
+      );
+
+      expect(result).toBe(false);
+      expect(mockApp.vault.modify).not.toHaveBeenCalled();
+    });
+
+    it("returns false when the file is missing", async () => {
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
+      const task = createTask(" ", 0);
+
+      const result = await taskUpdater.updateTaskColumnTag(
+        task,
+        "sprint",
+        "todo",
+      );
+
+      expect(result).toBe(false);
+      expect(mockApp.vault.modify).not.toHaveBeenCalled();
+    });
+  });
 });

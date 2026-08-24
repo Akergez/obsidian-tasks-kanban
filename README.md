@@ -50,6 +50,26 @@ By default the board shows one column per status type (Todo, In Progress, Done, 
 
 You can instead define **custom columns** per board in Settings. Each custom column is a partition over status symbols — pick which statuses it collects, and the first one becomes the symbol written when you drop a card into it. This lets you, for example, split "In Progress" into separate "Ongoing" (`/`) and "In Review" (`A`) columns.
 
+#### Tag columns
+
+Set a board's **column tag prefix** in Settings to build its columns from tags instead of statuses. With the prefix `sprint`, every distinct `#sprint_<column>` tag on your tasks becomes a column:
+
+```markdown
+- [ ] Write the spec #sprint_todo
+- [ ] Review the PR #sprint_in_progress
+- [x] Ship it #sprint_done
+```
+
+gives the columns *In progress*, *Todo* and *Done*, plus a leading **No column** for tasks carrying no `#sprint_…` tag. Dropping a card rewrites that tag in the source file — the task's `[ ]` status is left alone. Clearing the prefix returns the board to status columns.
+
+By default the columns are ordered alphabetically. Set **Column order** to arrange them yourself — a comma-separated list of column names (the part after the prefix), leftmost first:
+
+```
+todo, doing, done
+```
+
+Anything not listed follows alphabetically, so a new tag still shows up somewhere predictable. A listed column appears even when no task carries its tag yet, which is how you keep an empty column on the board to drop cards into.
+
 ### Saved boards and the base query
 
 A board's view is defined by a **query** (filters + sort + grouping) and its **columns**. In Settings you can:
@@ -81,9 +101,9 @@ The search and sort/group bars above the board edit the same query visually; the
 
 ### Drag & Drop
 
-- Drag a task card from one column and drop it on another to change its status
-- The dropped card takes the target column's status symbol
-- The source file is updated and the board refreshes to show the new status
+- Drag a task card from one column and drop it on another to move it
+- The dropped card takes the target column's status symbol — or, on a tag-column board, its `#<prefix>_<column>` tag
+- The source file is updated and the board refreshes to show the change
 
 ## Comparison
 

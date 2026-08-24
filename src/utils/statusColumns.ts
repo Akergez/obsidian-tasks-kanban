@@ -4,19 +4,29 @@ import type { ColumnConfig } from "../types/persistence";
 /**
  * Configuration for a Kanban column at render time.
  *
- * A column is a partition over status *symbols*: a task belongs to the column
- * whose {@link symbols} include its status symbol. Default columns (see
- * {@link buildColumns}) group every symbol of a status type together; custom
- * columns (see {@link resolveColumns}) are user-defined symbol partitions.
+ * A column partitions tasks one of two ways:
+ *
+ * - *status mode* (`tagPrefix` absent): a task belongs to the column whose
+ *   {@link symbols} include its status symbol. Default columns (see
+ *   {@link buildColumns}) group every symbol of a status type together; custom
+ *   columns (see {@link resolveColumns}) are user-defined symbol partitions.
+ * - *tag mode* (`tagPrefix` set): a task belongs to the column whose {@link tag}
+ *   it carries as `#<tagPrefix>_<tag>` (see buildTagColumns in tagColumns.ts).
+ *
+ * Matching for both modes lives in columnCollects (tagColumns.ts).
  */
 export interface KanbanColumnConfig {
   id: string;
   title: string;
-  /** Status symbols this column collects. */
+  /** Status symbols this column collects (status mode). */
   symbols: string[];
-  /** Symbol written to the task when it is dropped into this column. */
+  /** Symbol written to the task when it is dropped into this column (status mode). */
   dropSymbol: string;
   color?: string;
+  /** Tag mode: the board's shared column-tag prefix, without the leading '#'. */
+  tagPrefix?: string;
+  /** Tag mode: this column's part of the tag; "" marks the catch-all column. */
+  tag?: string;
 }
 
 /**
