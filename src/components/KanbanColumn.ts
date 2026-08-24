@@ -3,6 +3,8 @@ import { TasksIntegration } from "../services/TasksIntegration";
 import { KanbanCard } from "./KanbanCard";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
 import { columnCollects } from "../utils/tagColumns";
+import { colorFor, type ColorRule } from "../utils/cardColors";
+import { taskKey, type SubTask } from "../utils/taskHierarchy";
 
 /**
  * The Kanban column component
@@ -114,7 +116,11 @@ export class KanbanColumn {
   /**
    * Update tasks in this column
    */
-  updateTasks(tasks: Task[]) {
+  updateTasks(
+    tasks: Task[],
+    colorRules: ColorRule[] = [],
+    subTasksOf: Map<string, SubTask[]> = new Map(),
+  ) {
     // Clear existing cards
     for (const card of this.cards) {
       card.destroy();
@@ -139,7 +145,13 @@ export class KanbanColumn {
       const cardEl = cardsContainer.createDiv({
         cls: "tasks-kanban-card",
       });
-      const card = new KanbanCard(cardEl, task, this.tasksIntegration);
+      const card = new KanbanCard(
+        cardEl,
+        task,
+        this.tasksIntegration,
+        colorFor(task, colorRules),
+        subTasksOf.get(taskKey(task)) ?? [],
+      );
       this.cards.push(card);
       card.render();
     }

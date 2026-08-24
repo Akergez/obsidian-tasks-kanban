@@ -99,6 +99,13 @@ describe("parseQuery", () => {
     );
     expect(parseQuery("sort by start").query.sort.field).toBe("startDate");
     expect(parseQuery("sort by created").query.sort.field).toBe("createdDate");
+    expect(parseQuery("sort by filename").query.sort.field).toBe("fileName");
+  });
+
+  it("round-trips sort by filename", () => {
+    expect(serializeQuery(parseQuery("sort by filename reverse").query)).toBe(
+      "sort by filename reverse",
+    );
   });
 
   describe("date filters", () => {

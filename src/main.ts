@@ -37,6 +37,7 @@ export type SettingsSlice = Pick<
   | "baseColumns"
   | "baseColumnTagPrefix"
   | "baseColumnOrder"
+  | "baseCardColors"
   | "savedBoards"
 >;
 
@@ -102,6 +103,7 @@ export default class TasksKanbanPlugin extends Plugin {
           columns: this.data.baseColumns,
           columnTagPrefix: this.data.baseColumnTagPrefix,
           columnOrder: this.data.baseColumnOrder,
+          cardColors: this.data.baseCardColors,
         }),
         save: (state: BoardOwnState) => {
           this.data = {
@@ -126,6 +128,7 @@ export default class TasksKanbanPlugin extends Plugin {
           columns: saved?.columns ?? [],
           columnTagPrefix: saved?.columnTagPrefix ?? "",
           columnOrder: saved?.columnOrder ?? "",
+          cardColors: saved?.cardColors ?? "",
         };
       },
       save: (state: BoardOwnState) => {
@@ -267,6 +270,8 @@ export default class TasksKanbanPlugin extends Plugin {
         data?.baseColumnTagPrefix ?? DEFAULT_PLUGIN_DATA.baseColumnTagPrefix,
       baseColumnOrder:
         data?.baseColumnOrder ?? DEFAULT_PLUGIN_DATA.baseColumnOrder,
+      baseCardColors:
+        data?.baseCardColors ?? DEFAULT_PLUGIN_DATA.baseCardColors,
       // `savedQueries` is the pre-rename key; same element shape, so read it as
       // a fallback to migrate existing data files to `savedBoards`.
       savedBoards:

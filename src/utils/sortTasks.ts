@@ -1,4 +1,5 @@
 import type { Task } from "../services/TasksIntegration";
+import { taskFileName } from "./taskFile";
 
 /**
  * A field the board can be sorted by. `'none'` preserves the order tasks arrive
@@ -10,7 +11,8 @@ export type SortField =
   | "dueDate"
   | "scheduledDate"
   | "startDate"
-  | "createdDate";
+  | "createdDate"
+  | "fileName";
 
 /** The subset of {@link SortField} that maps to a date string on a Task. */
 type DateSortField = "dueDate" | "scheduledDate" | "startDate" | "createdDate";
@@ -42,6 +44,7 @@ export const SORT_FIELD_LABELS: Record<SortField, string> = {
   scheduledDate: "Scheduled date",
   startDate: "Start date",
   createdDate: "Created date",
+  fileName: "File name",
 };
 
 /** Priority value used for tasks with no priority set (obsidian-tasks "None"). */
@@ -63,6 +66,12 @@ function compareField(a: Task, b: Task, field: SortField): number {
     const pb = b.priority ?? NONE_PRIORITY;
     return pa - pb;
   }
+  if (field === "fileName") {
+    // Alphabetical by the containing note's name, case-insensitively.
+    return taskFileName(a).localeCompare(taskFileName(b), undefined, {
+      sensitivity: "base",
+    });
+  }
   // Date fields: lexicographic compare works for ISO YYYY-MM-DD.
   const da = a[field as DateSortField] as string;
   const db = b[field as DateSortField] as string;
@@ -79,6 +88,10 @@ function compareField(a: Task, b: Task, field: SortField): number {
 function hasValue(task: Task, field: SortField): boolean {
   if (field === "priority" || field === "none") {
     return true;
+  }
+  if (field === "fileName") {
+    // A task with no location has no file name to sort by, so it sinks.
+    return taskFileName(task) !== "";
   }
   const value = task[field];
   return value !== null && value !== undefined && value !== "";

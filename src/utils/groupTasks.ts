@@ -1,4 +1,5 @@
 import type { Task } from "../services/TasksIntegration";
+import { fileNameOf, folderOf } from "./taskFile";
 import type { SortDirection } from "./sortTasks";
 
 /**
@@ -61,17 +62,8 @@ const PRIORITY_LABELS: Record<number, string> = {
   5: "Lowest",
 };
 
-/** The path's parent folder, always ending in `/` (root → `/`). */
-function folderOf(path: string): string {
-  const slash = path.lastIndexOf("/");
-  return slash === -1 ? "/" : path.slice(0, slash + 1);
-}
-
-/** The file name without its `.md` extension. */
-function filenameOf(path: string): string {
-  const base = path.slice(path.lastIndexOf("/") + 1);
-  return base.replace(/\.md$/i, "");
-}
+// folderOf / fileNameOf live in utils/taskFile so the card's parent-file label
+// and the filename sort spell a note's name exactly as these lanes do.
 
 /**
  * Produce the group labels a task belongs to for the given field. Most fields
@@ -93,7 +85,7 @@ function labelsFor(task: Task, field: GroupField): string[] {
       return task.taskLocation?.path ? [folderOf(task.taskLocation.path)] : [];
     case "filename":
       return task.taskLocation?.path
-        ? [filenameOf(task.taskLocation.path)]
+        ? [fileNameOf(task.taskLocation.path)]
         : [];
     default:
       return [];

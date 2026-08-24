@@ -8,8 +8,16 @@ import {
   stripTags,
   type Chip,
 } from "../utils/taskChips";
+import { taskFileName } from "../utils/taskFile";
+import type { SubTask } from "../utils/taskHierarchy";
 import { setTooltip } from "obsidian";
 import type { App } from "obsidian";
+
+/**
+ * Status types that count as finished for the sub-task counter, matching the
+ * `done` query filter (see utils/statusFilter).
+ */
+const DONE_TYPES = new Set(["DONE", "CANCELLED", "NON_TASK"]);
 
 /**
  * The Kanban card component - represents a single task
@@ -21,16 +29,24 @@ export class KanbanCard {
   private app: App;
   private dragStartHandler: ((e: DragEvent) => void) | null = null;
   private clickHandler: ((e: MouseEvent) => void) | null = null;
+  /** Spine colour from the board's colour rules, or undefined for the default. */
+  private readonly spineColor?: string;
+  /** Tasks nested under this one in the source file, in document order. */
+  private readonly subTasks: SubTask[];
 
   constructor(
     container: HTMLElement,
     task: Task,
     tasksIntegration: TasksIntegration,
+    spineColor?: string,
+    subTasks: SubTask[] = [],
   ) {
     this.container = container;
     this.task = task;
     this.tasksIntegration = tasksIntegration;
     this.app = tasksIntegration.app;
+    this.spineColor = spineColor;
+    this.subTasks = subTasks;
   }
 
   /**
@@ -46,45 +62,35 @@ export class KanbanCard {
     );
     this.container.setAttribute("draggable", "true");
 
-    // Header: status + tags
-    const headerEl = this.container.createDiv({
-      cls: "tasks-kanban-card-header",
-    });
-
-    // Status indicator
-    const statusEl = headerEl.createSpan({
-      cls: "tasks-kanban-card-status",
-    });
-    statusEl.setText(this.task.status.symbol);
-    statusEl.setAttribute("title", this.task.status.name);
-    statusEl.setAttribute("data-status-type", this.task.status.type);
-
-    // Tags
-    if (this.task.tags && this.task.tags.length > 0) {
-      const tagsEl = headerEl.createDiv({
-        cls: "tasks-kanban-card-tags",
-      });
-      for (const tag of this.task.tags) {
-        tagsEl.createSpan({
-          cls: "tasks-kanban-card-tag",
-          text: tag,
-        });
-      }
+    // Paint the spine when a board colour rule matches this task. Everything
+    // else about the spine (width, default colour) lives in the stylesheet.
+    if (this.spineColor) {
+      this.container.addClass("tasks-kanban-card-spined");
+      this.container.style.setProperty(
+        "--tasks-kanban-card-spine",
+        this.spineColor,
+      );
     }
 
-    // Content: description
+    // Title: the task text, with its tags stripped (they get their own row).
     const fullTitle = stripTags(this.task.description, this.task.tags);
-    const descEl = this.container.createDiv({
-      cls: "tasks-kanban-card-description",
+    const titleEl = this.container.createDiv({
+      cls: "tasks-kanban-card-title",
     });
     const displayText = truncate(fullTitle);
-    descEl.setText(displayText);
+    titleEl.setText(displayText);
     if (displayText !== fullTitle) {
-      descEl.setAttribute("title", fullTitle);
+      titleEl.setAttribute("title", fullTitle);
     }
 
-    // Footer: metadata chips (priority, dates, dependencies)
+    // Nested tasks, listed inside this card rather than getting cards of their own
+    this.renderSubTasks();
+
+    // Metadata chips (priority, dates, dependencies)
     this.renderChips();
+
+    // Footer: tags alongside the name of the note the task lives in.
+    this.renderFooter();
 
     // Add drag start handler
     this.setupDragAndDrop();
@@ -138,6 +144,84 @@ export class KanbanCard {
       if (chip.title) {
         setTooltip(chipEl, chip.title);
       }
+    }
+  }
+
+  /**
+   * Render the nested tasks as a checklist inside the card.
+   *
+   * Sub-task tags are deliberately not shown: a nested task is not a board
+   * citizen (it has no card, and its tags reach neither the tag filter nor the
+   * tag columns), so surfacing them here would suggest an influence they don't
+   * have. Their text is stripped of tags for the same reason.
+   *
+   * Completion is shown by striking the line through rather than by bringing
+   * back a status icon — the counter in the heading carries the summary.
+   */
+  private renderSubTasks() {
+    if (this.subTasks.length === 0) {
+      return;
+    }
+
+    const doneCount = this.subTasks.filter((sub) =>
+      DONE_TYPES.has(sub.task.status.type),
+    ).length;
+
+    const listEl = this.container.createDiv({
+      cls: "tasks-kanban-card-subtasks",
+    });
+    listEl.createDiv({
+      cls: "tasks-kanban-card-subtasks-count",
+      text: `${doneCount}/${this.subTasks.length}`,
+    });
+
+    for (const sub of this.subTasks) {
+      const isDone = DONE_TYPES.has(sub.task.status.type);
+      const itemEl = listEl.createDiv({
+        cls: isDone
+          ? "tasks-kanban-card-subtask tasks-kanban-card-subtask-done"
+          : "tasks-kanban-card-subtask",
+        text: stripTags(sub.task.description, sub.task.tags),
+      });
+      // Deeper nesting steps in; depth 1 sits flush with the list.
+      if (sub.depth > 1) {
+        itemEl.style.setProperty(
+          "--tasks-kanban-subtask-indent",
+          `${(sub.depth - 1) * 12}px`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Render the footer row: the task's tags, then the name of the note it lives
+   * in. The row is skipped entirely when there is neither — a task with no tags
+   * in a location-less cache entry shouldn't gain an empty gap.
+   */
+  private renderFooter() {
+    const tags = this.task.tags ?? [];
+    const fileName = taskFileName(this.task);
+    if (tags.length === 0 && fileName === "") {
+      return;
+    }
+
+    const footerEl = this.container.createDiv({
+      cls: "tasks-kanban-card-footer",
+    });
+
+    if (tags.length > 0) {
+      const tagsEl = footerEl.createDiv({ cls: "tasks-kanban-card-tags" });
+      for (const tag of tags) {
+        tagsEl.createSpan({ cls: "tasks-kanban-card-tag", text: tag });
+      }
+    }
+
+    if (fileName !== "") {
+      const fileEl = footerEl.createSpan({
+        cls: "tasks-kanban-card-file",
+        text: fileName,
+      });
+      setTooltip(fileEl, this.task.taskLocation?.path ?? fileName);
     }
   }
 

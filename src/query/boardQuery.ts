@@ -43,7 +43,7 @@ import {
  *   status.name (includes|does not include) <text>
  *   status.name (regex matches|regex does not match) /<pattern>/
  *   <date-field> <operator> <value>  (e.g., starts before tomorrow, due after 2026-07-10)
- *   sort by <due|scheduled|start|created|priority> [reverse]
+ *   sort by <due|scheduled|start|created|priority|filename> [reverse]
  *   group by <status|priority|due|…|tags|folder|filename> [reverse]
  *
  * Any other line — including valid-but-unsupported Tasks instructions like
@@ -90,6 +90,7 @@ const SORT_KEYWORD_TO_FIELD: Record<string, SortField> = {
   scheduled: "scheduledDate",
   start: "startDate",
   created: "createdDate",
+  filename: "fileName",
 };
 
 /** Inverse of {@link SORT_KEYWORD_TO_FIELD}, for serialization. */
@@ -99,6 +100,7 @@ const SORT_FIELD_TO_KEYWORD: Partial<Record<SortField, string>> = {
   scheduledDate: "scheduled",
   startDate: "start",
   createdDate: "created",
+  fileName: "filename",
 };
 
 /** Maps the Tasks `group by` keyword to our internal {@link GroupField}. */
@@ -125,7 +127,7 @@ const GROUP_FIELD_TO_KEYWORD: Partial<Record<GroupField, string>> = {
 
 /** One-line summary of the supported syntax, used in error messages. */
 const SUPPORTED_SYNTAX =
-  "supported: tag includes #<tag>, tag not includes #<tag>, description includes <text>, done, not done, status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>, status.name (includes|does not include) <text>, status.name (regex matches|regex does not match) /<pattern>/, <date-field> <operator> <value> (e.g., starts before tomorrow), sort by <due|scheduled|start|created|priority> [reverse], group by <status|priority|tags|path|folder|filename> [reverse]";
+  "supported: tag includes #<tag>, tag not includes #<tag>, description includes <text>, done, not done, status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>, status.name (includes|does not include) <text>, status.name (regex matches|regex does not match) /<pattern>/, <date-field> <operator> <value> (e.g., starts before tomorrow), sort by <due|scheduled|start|created|priority|filename> [reverse], group by <status|priority|tags|path|folder|filename> [reverse]";
 
 /**
  * Parse a multi-line query string into a {@link BoardQuery}. One instruction per
@@ -168,6 +170,37 @@ export function parseQuery(input: string): {
   });
 
   return { query: { filters, sort, group }, errors };
+}
+
+/**
+ * Parse a single filter line, for callers that need one filter rather than a
+ * whole query — see parseColorRules in utils/cardColors, where each rule pairs
+ * one filter with a colour. Returns an error string for a line that is not a
+ * supported filter (including `sort by` / `group by`, which are not filters).
+ */
+export function parseFilterLine(
+  line: string,
+): { filter: FilterInstruction } | { error: string } {
+  const result = parseLine(line.trim());
+  if (result.error) {
+    return { error: result.error };
+  }
+  if (!result.filter) {
+    return { error: `"${line.trim()}" is not a filter` };
+  }
+  return { filter: result.filter };
+}
+
+/**
+ * Whether a single task satisfies every one of `filters`. Delegates to the same
+ * {@link filterTasks} the board uses, so a rule matches exactly when the same
+ * line would match in a query.
+ */
+export function taskMatchesFilters(
+  task: Task,
+  filters: FilterInstruction[],
+): boolean {
+  return filterTasks([task], filters).length === 1;
 }
 
 /** Parse one already-trimmed, non-empty line. */

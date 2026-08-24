@@ -9,6 +9,8 @@ import { GroupBar } from "./GroupBar";
 import { QueryModal } from "./QueryModal";
 import { resolveColumns } from "../utils/statusColumns";
 import { buildTagColumns, parseColumnOrder } from "../utils/tagColumns";
+import { parseColorRules, type ColorRule } from "../utils/cardColors";
+import { nestTasks, type SubTask } from "../utils/taskHierarchy";
 import { getUniqueTags } from "../utils/searchFilter";
 import { groupTasks, type TaskGroup } from "../utils/groupTasks";
 import {
@@ -47,8 +49,12 @@ export class KanbanBoard {
   private sortBar: SortBar;
   private groupBar: GroupBar;
   private persistence: BoardStatePersistence;
-  /** Source of truth: every task last received, before query filtering. */
+  /** Every task last received, exactly as the cache handed it over. */
+  private rawTasks: Task[] = [];
+  /** Root tasks (one card each), before query filtering. */
   private allTasks: Task[] = [];
+  /** Sub-tasks to render inside each root's card, keyed by {@link taskKey}. */
+  private subTasksOf = new Map<string, SubTask[]>();
   /** The canonical board query: filters + sort + group. Bars edit slices of it. */
   private boardQuery: BoardQuery;
   /** Shared base query merged on top of {@link boardQuery} at render time. */
@@ -63,6 +69,10 @@ export class KanbanBoard {
   private columnTagPrefix: string;
   /** Tag-column order for this board; "" ⇒ alphabetical. Set in settings. */
   private columnOrder: string;
+  /** Raw card-colour rules for this board, as typed in settings. */
+  private cardColors: string;
+  /** {@link cardColors} parsed; rebuilt whenever the raw setting changes. */
+  private colorRules: ColorRule[] = [];
 
   constructor(
     container: HTMLElement,
@@ -84,6 +94,8 @@ export class KanbanBoard {
     this.columnConfigs = initial.columns;
     this.columnTagPrefix = initial.columnTagPrefix;
     this.columnOrder = initial.columnOrder;
+    this.cardColors = initial.cardColors;
+    this.colorRules = parseColorRules(this.cardColors).rules;
 
     // Search, sort, and query-edit controls sit above the board in a shared row.
     const header = this.container.createDiv({ cls: "tasks-kanban-header" });
@@ -176,6 +188,7 @@ export class KanbanBoard {
       columns: this.columnConfigs,
       columnTagPrefix: this.columnTagPrefix,
       columnOrder: this.columnOrder,
+      cardColors: this.cardColors,
     });
   }
 
@@ -210,15 +223,24 @@ export class KanbanBoard {
    * Render the board with current tasks
    */
   render() {
-    this.updateTasks(this.allTasks);
+    this.updateTasks(this.rawTasks);
   }
 
   /**
-   * Update tasks and redistribute across columns
+   * Update tasks and redistribute across columns.
+   *
+   * Nesting is resolved here, before anything else looks at the list: a nested
+   * task is not a board citizen at all — it gets no card, its tags never reach
+   * the tag filter or the tag columns, and queries never match it. It only ever
+   * appears inside its root task's card. Everything downstream therefore sees
+   * root tasks alone.
    */
   updateTasks(tasks: Task[]) {
-    // Remove duplicates by ID
-    this.allTasks = this.removeDuplicateTasks(tasks);
+    this.rawTasks = tasks;
+    const deduped = this.removeDuplicateTasks(tasks);
+    const { roots, subTasksOf } = nestTasks(deduped);
+    this.allTasks = roots;
+    this.subTasksOf = subTasksOf;
     this.searchBar.setTags(getUniqueTags(this.allTasks));
     this.applyQuery();
   }
@@ -250,6 +272,8 @@ export class KanbanBoard {
     this.columnConfigs = state.columns;
     this.columnTagPrefix = state.columnTagPrefix;
     this.columnOrder = state.columnOrder;
+    this.cardColors = state.cardColors;
+    this.colorRules = parseColorRules(this.cardColors).rules;
     this.searchBar.setState({
       titleQuery: getTitle(this.boardQuery),
       selectedTags: getTags(this.boardQuery),
@@ -327,7 +351,9 @@ export class KanbanBoard {
       this.laneKeys = keys;
     }
 
-    groups.forEach((group, i) => this.lanes[i].updateTasks(group.tasks));
+    groups.forEach((group, i) =>
+      this.lanes[i].updateTasks(group.tasks, this.colorRules, this.subTasksOf),
+    );
   }
 
   /**

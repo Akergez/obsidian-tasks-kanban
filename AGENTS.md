@@ -109,6 +109,10 @@ A board's columns come from one of two sources, resolved in `KanbanBoard.renderL
 
 `columnCollects` (in `tagColumns.ts`) is the single matcher for both modes; `KanbanLane` and `KanbanColumn`'s drop handler go through it.
 
+### Nested Tasks
+
+`utils/taskHierarchy.ts` splits the cache's flat task list into root tasks and their descendants, reading nesting from each line's indentation (`originalMarkdown`) and line number — the cache exposes no parent/child fields we trust. `KanbanBoard.updateTasks` runs this **before** anything else touches the list, so filtering, sorting, tag columns, and the tag dropdown all see roots only; sub-tasks reach the UI solely as `KanbanCard`'s `subTasks`.
+
 ## Testing
 
 ### Unit Tests

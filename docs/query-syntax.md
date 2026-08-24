@@ -38,6 +38,7 @@ Note that `done` covers cancelled tasks as well, matching the Tasks reference; `
 - `start` - Start date
 - `created` - Creation date
 - `priority` - Priority
+- `filename` - Name of the note the task lives in (alphabetical, case-insensitive)
 
 ### Grouping
 

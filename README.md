@@ -16,6 +16,9 @@ A Kanban board view plugin for Obsidian that displays Tasks in a visual board la
 - **Drag & Drop**: Move tasks between columns to change their status
 - **Tasks Integration**: Listens to Tasks plugin events for real-time updates
 - **Task Format Aware**: Writes done/cancelled dates in whichever format Tasks' own **Task Format** setting specifies — emoji (`✅ 2026-08-04`) or Dataview (`[completion:: 2026-08-04]`)
+- **Card Design**: The task text reads as the card's title, with tags and the parent note's name in the footer
+- **Nested Tasks**: Indented sub-tasks are listed inside the parent's card instead of getting cards of their own
+- **Card Colours**: Colour a card's left edge from rules written in the query syntax
 - **Click to Open**: Click on any task card to open the source file
 
 ## Installation
@@ -84,7 +87,7 @@ The board supports a subset of Tasks query syntax. For complete documentation, s
 
 **Sorting:**
 - `sort by <field>` / `sort by <field> reverse`
-- Fields: `due`, `scheduled`, `start`, `created`, `priority`
+- Fields: `due`, `scheduled`, `start`, `created`, `priority`, `filename`
 
 **Grouping** (into foldable swimlanes):
 - `group by <field>` / `group by <field> reverse`
@@ -93,6 +96,32 @@ The board supports a subset of Tasks query syntax. For complete documentation, s
 Date-based grouping is intentionally not offered, since one lane per distinct date scatters the board.
 
 The search and sort/group bars above the board edit the same query visually; the filter button opens the raw query editor.
+
+### Nested tasks
+
+A task indented under another task doesn't get a card of its own — it is listed inside its parent's card, with a `done/total` counter and completed lines struck through. Nesting is read from the source file: within one note, a task belongs to the closest task above it with a smaller indent, and every descendant (however deep) is listed in the top-level task's card.
+
+```markdown
+- [ ] Ship the release #sprint_doing
+    - [x] Write the changelog
+    - [ ] Tag the build
+        - [ ] Upload assets
+```
+
+Nested tasks are not board citizens: **their tags are ignored everywhere** — they never appear in the tag filter, never create or move tag columns, and queries never match them. Only the parent card carries tags. Dragging a card moves the parent task; the nested lines stay where they are.
+
+### Card colours
+
+Each card has a **spine** — a coloured strip down its left edge — that you can drive from board settings. Add one rule per line under **Card colours**: a filter, `->`, and a CSS colour.
+
+```
+tag includes #urgent -> red
+status.type is IN_PROGRESS -> #3b82f6
+due before today -> orange
+not done -> var(--text-muted)
+```
+
+The filter is the same syntax as the board query, so anything you can filter on you can colour on. The **first matching rule wins**, so put the most specific ones at the top; a card matching no rule gets no spine. Named colours, hex, `rgb()`/`hsl()` and `var(--…)` all work.
 
 ### Drag & Drop
 

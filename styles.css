@@ -492,57 +492,70 @@
     background-color: var(--background-modifier-active-hover);
 }
 
-/* Card header (status + tags) */
-.tasks-kanban-card-header {
+/* Card spine: a coloured left edge driven by the board's colour rules.
+   The rule supplies --tasks-kanban-card-spine; without a match the card keeps
+   its plain border and no spine is drawn. */
+.tasks-kanban-card-spined {
+    border-left: 3px solid var(--tasks-kanban-card-spine, transparent);
+    padding-left: 8px;
+}
+
+/* Card title: the task text, the card's most prominent element */
+.tasks-kanban-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--text-normal);
+    word-break: break-word;
+}
+
+/* Nested tasks, listed inside the parent's card */
+.tasks-kanban-card-subtasks {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 8px;
+    border-left: 2px solid var(--background-modifier-border);
+}
+
+.tasks-kanban-card-subtasks-count {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-faint);
+    letter-spacing: 0.03em;
+}
+
+.tasks-kanban-card-subtask {
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--text-muted);
+    word-break: break-word;
+    margin-left: var(--tasks-kanban-subtask-indent, 0);
+}
+
+.tasks-kanban-card-subtask-done {
+    text-decoration: line-through;
+    color: var(--text-faint);
+}
+
+/* Card footer (tags + parent file) */
+.tasks-kanban-card-footer {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 6px;
     flex-wrap: wrap;
 }
 
-/* Card status */
-.tasks-kanban-card-status {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    border-radius: 3px;
-    font-size: 10px;
-    font-weight: 600;
-    flex-shrink: 0;
-}
-
-/* Status: Todo */
-.tasks-kanban-card .tasks-kanban-card-status[data-status-type="TODO"] {
-    background-color: var(--text-error);
-    color: white;
-}
-
-/* Status: In Progress */
-.tasks-kanban-card .tasks-kanban-card-status[data-status-type="IN_PROGRESS"] {
-    background-color: var(--text-warning);
-    color: white;
-}
-
-/* Status: Done */
-.tasks-kanban-card .tasks-kanban-card-status[data-status-type="DONE"] {
-    background-color: var(--text-success);
-    color: white;
-}
-
-/* Status: Cancelled */
-.tasks-kanban-card .tasks-kanban-card-status[data-status-type="CANCELLED"] {
-    background-color: var(--text-muted);
-    color: white;
-}
-
-/* Card description */
-.tasks-kanban-card-description {
-    font-size: 13px;
-    line-height: 1.4;
-    color: var(--text-normal);
-    word-break: break-word;
+/* Parent note name, pushed to the trailing edge of the footer */
+.tasks-kanban-card-file {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 55%;
 }
 
 /* Card tags */
@@ -734,12 +747,6 @@
 @media (hover: none) and (pointer: coarse) {
     .tasks-kanban-card {
         padding: 12px;
-    }
-    
-    .tasks-kanban-card-status {
-        width: 20px;
-        height: 20px;
-        font-size: 12px;
     }
     
     /* Disable drag for touch devices (for now) */

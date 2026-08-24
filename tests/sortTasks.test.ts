@@ -146,6 +146,50 @@ describe("sortTasks", () => {
     });
   });
 
+  describe("file name", () => {
+    const at = (id: string, path: string | undefined) =>
+      createTask({
+        id,
+        taskLocation: path ? { path, lineNumber: 1 } : (undefined as never),
+      });
+
+    it("orders alphabetically by note name, ignoring folder and extension", () => {
+      const tasks = [
+        at("c", "/z/Charlie.md"),
+        at("a", "/notes/deep/Alpha.md"),
+        at("b", "Bravo.md"),
+      ];
+      const result = sortTasks(tasks, state({ field: "fileName" }));
+      expect(ids(result)).toEqual(["a", "b", "c"]);
+    });
+
+    it("reverses with desc", () => {
+      const tasks = [at("a", "Alpha.md"), at("b", "Bravo.md")];
+      const result = sortTasks(
+        tasks,
+        state({ field: "fileName", direction: "desc" }),
+      );
+      expect(ids(result)).toEqual(["b", "a"]);
+    });
+
+    it("compares case-insensitively", () => {
+      const tasks = [at("upper", "Zebra.md"), at("lower", "apple.md")];
+      const result = sortTasks(tasks, state({ field: "fileName" }));
+      expect(ids(result)).toEqual(["lower", "upper"]);
+    });
+
+    it("sinks tasks with no location to the bottom in both directions", () => {
+      const tasks = [at("none", undefined), at("a", "Alpha.md")];
+      expect(ids(sortTasks(tasks, state({ field: "fileName" })))).toEqual([
+        "a",
+        "none",
+      ]);
+      expect(
+        ids(sortTasks(tasks, state({ field: "fileName", direction: "desc" }))),
+      ).toEqual(["a", "none"]);
+    });
+  });
+
   describe("stable tiebreak", () => {
     it("orders equal keys by description", () => {
       const tasks = [

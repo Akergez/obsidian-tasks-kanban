@@ -7,6 +7,7 @@ import {
 } from "obsidian";
 
 import { parseQuery } from "../query/boardQuery";
+import { parseColorRules } from "../utils/cardColors";
 import { createSavedBoard } from "../query/savedBoards";
 import type { ColumnConfig, SavedBoard } from "../types/persistence";
 import type { StatusInfo } from "../services/TasksIntegration";
@@ -36,6 +37,19 @@ const COLUMN_ORDER_DESC =
   "e.g. 'todo, doing, done'. Columns not listed follow alphabetically. A listed " +
   "column shows up even when no task carries its tag yet. Empty: all alphabetical.";
 
+/** Shared description of the card-colour control (pane + settings search). */
+const CARD_COLORS_DESC =
+  "One rule per line: a filter, then '->', then a CSS colour. The first matching " +
+  "rule paints that card's left edge, so put the most specific rule on top. " +
+  "Filters use the same syntax as the query above.";
+
+// Literal rule syntax shown as an example placeholder; intentionally verbatim.
+const CARD_COLORS_PLACEHOLDER = [
+  "tag includes #urgent -> red",
+  "status.type is IN_PROGRESS -> #3b82f6",
+  "due before today -> orange",
+].join("\n");
+
 /** A unique id generator for new custom columns. */
 function newColumnId(): string {
   return crypto.randomUUID();
@@ -56,6 +70,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
   private baseColumns: ColumnConfig[] = [];
   private baseColumnTagPrefix = "";
   private baseColumnOrder = "";
+  private baseCardColors = "";
   private savedBoards: SavedBoard[] = [];
 
   // Parse-error state, keyed by field ("base" or a saved-board id).
@@ -103,6 +118,15 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
               placeholder: "todo, doing, done",
             },
           },
+          {
+            name: "Card colours",
+            desc: CARD_COLORS_DESC,
+            control: {
+              type: "textarea",
+              key: "baseCardColors",
+              placeholder: CARD_COLORS_PLACEHOLDER,
+            },
+          },
         ],
       },
       {
@@ -147,6 +171,15 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
               placeholder: "todo, doing, done",
             },
           },
+          {
+            name: "Card colours",
+            desc: CARD_COLORS_DESC,
+            control: {
+              type: "textarea",
+              key: `savedBoardCardColors-${board.id}`,
+              placeholder: CARD_COLORS_PLACEHOLDER,
+            },
+          },
         ]),
       },
     ];
@@ -165,6 +198,9 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     }
     if (key === "baseColumnOrder") {
       return data.baseColumnOrder;
+    }
+    if (key === "baseCardColors") {
+      return data.baseCardColors;
     }
     if (key.startsWith("savedBoardName-")) {
       const boardId = key.replace("savedBoardName-", "");
@@ -186,6 +222,11 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       const board = data.savedBoards.find((b) => b.id === boardId);
       return board?.columnOrder ?? "";
     }
+    if (key.startsWith("savedBoardCardColors-")) {
+      const boardId = key.replace("savedBoardCardColors-", "");
+      const board = data.savedBoards.find((b) => b.id === boardId);
+      return board?.cardColors ?? "";
+    }
     return undefined;
   }
 
@@ -199,6 +240,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
         baseColumns: data.baseColumns,
         baseColumnTagPrefix: data.baseColumnTagPrefix,
         baseColumnOrder: data.baseColumnOrder,
+        baseCardColors: data.baseCardColors,
         savedBoards: data.savedBoards,
         ...patch,
       });
@@ -229,6 +271,10 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     }
     if (key === "baseColumnOrder") {
       await commit({ baseColumnOrder: value as string });
+      return;
+    }
+    if (key === "baseCardColors") {
+      await commit({ baseCardColors: value as string });
       return;
     }
     if (key.startsWith("savedBoardName-")) {
@@ -267,6 +313,15 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       });
       return;
     }
+    if (key.startsWith("savedBoardCardColors-")) {
+      await commit({
+        savedBoards: patchBoard("savedBoardCardColors-", (b) => ({
+          ...b,
+          cardColors: value as string,
+        })),
+      });
+      return;
+    }
   }
 
   display(): void {
@@ -279,6 +334,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     }));
     this.baseColumnTagPrefix = data.baseColumnTagPrefix;
     this.baseColumnOrder = data.baseColumnOrder;
+    this.baseCardColors = data.baseCardColors;
     this.savedBoards = data.savedBoards.map((b) => ({
       ...b,
       columns: (b.columns ?? []).map((c) => ({
@@ -315,6 +371,14 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       },
       (value) => {
         this.baseColumnOrder = value;
+      },
+    );
+    this.renderCardColorsField(
+      containerEl,
+      "base-colors",
+      this.baseCardColors,
+      (value) => {
+        this.baseCardColors = value;
       },
     );
     if (!this.baseColumnTagPrefix) {
@@ -382,6 +446,14 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       },
       (value) => {
         board.columnOrder = value;
+      },
+    );
+    this.renderCardColorsField(
+      containerEl,
+      `${board.id}-colors`,
+      board.cardColors ?? "",
+      (value) => {
+        board.cardColors = value;
       },
     );
     if (!board.columnTagPrefix) {
@@ -580,6 +652,62 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
   }
 
   /**
+   * Render the card-spine colour rules for one board: a textarea of
+   * `<filter> -> <colour>` lines, validated on every change like the query
+   * field. Errors render into a sibling div and gate the Save button, without
+   * re-rendering the pane (which would blur the textarea mid-typing).
+   */
+  private renderCardColorsField(
+    containerEl: HTMLElement,
+    key: string,
+    initialValue: string,
+    onChange: (value: string) => void,
+  ): void {
+    new Setting(containerEl)
+      .setName("Card colours")
+      .setClass("tasks-kanban-setting-query")
+      .setDesc(CARD_COLORS_DESC)
+      .addTextArea((textArea) => {
+        textArea.inputEl.rows = 4;
+        textArea.inputEl.spellcheck = false;
+        textArea.inputEl.placeholder = CARD_COLORS_PLACEHOLDER;
+        textArea.setValue(initialValue);
+        textArea.onChange((value) => {
+          onChange(value);
+          this.validateColorRules(key, value, errorEl);
+        });
+      });
+
+    const errorEl = containerEl.createDiv({
+      cls: "tasks-kanban-settings-errors",
+    });
+
+    this.validateColorRules(key, initialValue, errorEl);
+  }
+
+  /** Parse colour rules, surface their errors, and keep Save in sync. */
+  private validateColorRules(
+    key: string,
+    value: string,
+    errorEl: HTMLElement,
+  ): void {
+    const { errors } = parseColorRules(value);
+
+    if (errors.length === 0) {
+      this.errors.delete(key);
+    } else {
+      this.errors.set(key, errors);
+    }
+
+    errorEl.empty();
+    for (const error of errors) {
+      errorEl.createDiv({ cls: "tasks-kanban-settings-error", text: error });
+    }
+
+    this.saveButton?.setDisabled(this.hasErrors());
+  }
+
+  /**
    * Render a query textarea bound to `key`, validating on every change. Errors
    * render into a sibling div and toggle the Save button — without re-rendering
    * the pane (which would blur the textarea the user is typing in).
@@ -661,6 +789,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       baseColumns: clean(this.baseColumns),
       baseColumnTagPrefix: this.baseColumnTagPrefix,
       baseColumnOrder: this.baseColumnOrder,
+      baseCardColors: this.baseCardColors,
       savedBoards: this.savedBoards.map((b) => ({
         ...b,
         columns: clean(b.columns),

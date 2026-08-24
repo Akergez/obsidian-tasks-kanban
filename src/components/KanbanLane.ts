@@ -3,6 +3,8 @@ import { TasksIntegration } from "../services/TasksIntegration";
 import { KanbanColumn } from "./KanbanColumn";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
 import { columnCollects } from "../utils/tagColumns";
+import type { ColorRule } from "../utils/cardColors";
+import type { SubTask } from "../utils/taskHierarchy";
 
 /**
  * A single swimlane: an optional header (the group label) above a horizontal row
@@ -76,12 +78,16 @@ export class KanbanLane {
   /** Distribute this lane's tasks across its columns (by status symbol, or by
    *  column tag when the board uses tag columns). A task no column collects is
    *  not shown (consistent with query filtering). */
-  updateTasks(tasks: Task[]): void {
+  updateTasks(
+    tasks: Task[],
+    colorRules: ColorRule[] = [],
+    subTasksOf: Map<string, SubTask[]> = new Map(),
+  ): void {
     for (const column of this.columns) {
       const columnTasks = tasks.filter((task) =>
         columnCollects(column.config, task),
       );
-      column.updateTasks(columnTasks);
+      column.updateTasks(columnTasks, colorRules, subTasksOf);
     }
   }
 

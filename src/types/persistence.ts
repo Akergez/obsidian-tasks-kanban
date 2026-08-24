@@ -42,6 +42,8 @@ export interface SavedBoard {
   columnTagPrefix?: string;
   /** Tag columns: comma-separated column parts, leftmost first; "" ⇒ alphabetical. */
   columnOrder?: string;
+  /** Card-spine colour rules, one `<filter> -> <colour>` per line; "" ⇒ none. */
+  cardColors?: string;
 }
 
 /**
@@ -63,6 +65,8 @@ export interface PluginData {
   baseColumnTagPrefix: string;
   /** Tag-column order for the base-only board; "" ⇒ alphabetical. */
   baseColumnOrder: string;
+  /** Card-spine colour rules for the base-only board; "" ⇒ none. */
+  baseCardColors: string;
   /** User-managed saved boards (views). */
   savedBoards: SavedBoard[];
 }
@@ -77,6 +81,7 @@ export const DEFAULT_PLUGIN_DATA: PluginData = {
   baseColumns: [],
   baseColumnTagPrefix: "",
   baseColumnOrder: "",
+  baseCardColors: "",
   savedBoards: [],
 };
 
@@ -114,6 +119,8 @@ export interface BoardOwnState {
   columnTagPrefix: string;
   /** Tag-column order; "" ⇒ alphabetical. Owned by settings, never written by a board. */
   columnOrder: string;
+  /** Card-spine colour rules; "" ⇒ none. Owned by settings, never written by a board. */
+  cardColors: string;
 }
 
 /**
