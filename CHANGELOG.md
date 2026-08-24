@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.14.0...0.15.0) (2026-08-24)
+
+
+### Features
+
+* add weekly planer button ([ca3cd71](https://github.com/Akergez/obsidian-tasks-kanban/commit/ca3cd7178ebef6f45643b6172679bc76e3d09fe9))
+* boards as files ([4f746d5](https://github.com/Akergez/obsidian-tasks-kanban/commit/4f746d5047c3ea4b88161c979cb2cc79b3c31cf2))
+
 ## [0.14.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.13.0...0.14.0) (2026-08-24)
 
 
