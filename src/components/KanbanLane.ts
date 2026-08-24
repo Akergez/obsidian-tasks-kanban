@@ -2,7 +2,7 @@ import { type Task } from "../services/TasksIntegration";
 import { TasksIntegration } from "../services/TasksIntegration";
 import { KanbanColumn } from "./KanbanColumn";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
-import { columnCollects } from "../utils/tagColumns";
+import { columnCollects } from "../utils/columnMatch";
 import type { ColorRule } from "../utils/cardColors";
 import type { SubTask } from "../utils/taskHierarchy";
 

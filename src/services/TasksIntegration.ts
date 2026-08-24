@@ -2,8 +2,10 @@ import type { App, EventRef } from "obsidian";
 import { TaskUpdater } from "./TaskUpdater";
 import {
   type TaskFormat,
+  type TaskFormatSetting,
   resolveTaskFormat,
   DEFAULT_TASK_FORMAT,
+  DEFAULT_TASK_FORMAT_SETTING,
 } from "../utils/taskFormat";
 
 /**
@@ -104,9 +106,19 @@ export class TasksIntegration {
   private statuses: StatusInfo[] = [];
   private eventRefs: EventRef[] = [];
   private subscribers: ((tasks: Task[]) => void)[] = [];
+  /**
+   * This plugin's task-format setting, read live so a settings change applies
+   * to the next write. `auto` defers to the Tasks plugin's own setting.
+   */
+  private readonly getFormatSetting: () => TaskFormatSetting;
 
-  constructor(app: App) {
+  constructor(
+    app: App,
+    getFormatSetting: () => TaskFormatSetting = () =>
+      DEFAULT_TASK_FORMAT_SETTING,
+  ) {
     this.app = app;
+    this.getFormatSetting = getFormatSetting;
     this.taskUpdater = new TaskUpdater(app, this);
     this.setupEventListeners();
   }
@@ -259,7 +271,9 @@ export class TasksIntegration {
   /**
    * Get the Tasks plugin's write-relevant settings (setDoneDate,
    * setCancelledDate, taskFormat).
-   * Reads from in-memory settings first, then falls back to persisted data.json
+   * Reads from in-memory settings first, then falls back to persisted data.json.
+   * The resolved format is then overridden by this plugin's own setting unless
+   * that is `auto` (see {@link applyFormatOverride}).
    */
   async getWriteSettings(): Promise<WriteSettings> {
     // Try in-memory settings first
@@ -272,15 +286,24 @@ export class TasksIntegration {
     } | null;
 
     if (plugin?.settings) {
-      return {
+      return this.applyFormatOverride({
         setDoneDate: plugin.settings.setDoneDate ?? false,
         setCancelledDate: plugin.settings.setCancelledDate ?? false,
         taskFormat: resolveTaskFormat(plugin.settings.taskFormat),
-      };
+      });
     }
 
     // Fall back to persisted settings
-    return this.readWriteSettingsFromFile();
+    return this.applyFormatOverride(await this.readWriteSettingsFromFile());
+  }
+
+  /** Let this plugin's own format setting win over whatever Tasks reports. */
+  private applyFormatOverride(settings: WriteSettings): WriteSettings {
+    const override = this.getFormatSetting();
+    if (override === "auto") {
+      return settings;
+    }
+    return { ...settings, taskFormat: override };
   }
 
   /**

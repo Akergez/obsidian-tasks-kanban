@@ -34,6 +34,35 @@ describe("serializeBoardFile", () => {
     expect(text).not.toContain("cardColors:");
     expect(text).not.toContain("columnTagPrefix:");
     expect(text).not.toContain("columns:");
+    expect(text).not.toContain("dateColumns:");
+  });
+
+  it("always writes the board type, even at its default", () => {
+    expect(serializeBoardFile(board())).toContain("boardType: status");
+    expect(serializeBoardFile(board({ boardType: "date" }))).toContain(
+      "boardType: date",
+    );
+  });
+
+  it("writes the date field only for a date board, as a Tasks keyword", () => {
+    expect(
+      serializeBoardFile(
+        board({ boardType: "date", dateField: "scheduledDate" }),
+      ),
+    ).toContain("dateField: scheduled");
+    expect(serializeBoardFile(board({ boardType: "status" }))).not.toContain(
+      "dateField:",
+    );
+  });
+
+  it("quotes a column date so YAML cannot read it back as a timestamp", () => {
+    const text = serializeBoardFile(
+      board({
+        boardType: "date",
+        dateColumns: [{ id: "c1", title: "Monday", date: "2026-08-24" }],
+      }),
+    );
+    expect(text).toContain('date: "2026-08-24"');
   });
 
   it("always writes the fold lists, so their shape is discoverable", () => {
@@ -51,6 +80,7 @@ describe("round trip", () => {
   it("preserves a fully populated board", () => {
     const input = board({
       name: "Sprint board",
+      boardType: "tag",
       query: "tag includes #work\nnot done\nsort by due reverse",
       columnTagPrefix: "sprint",
       columnOrder: "todo, doing, done",
@@ -82,6 +112,19 @@ describe("round trip", () => {
       columns: [{ id: "c1", title: "Todo", symbols: [" ", "x"] }],
     });
     expect(roundTrip(input).columns[0].symbols).toEqual([" ", "x"]);
+  });
+
+  it("preserves a date board", () => {
+    const input = board({
+      name: "This week",
+      boardType: "date",
+      dateField: "startDate",
+      dateColumns: [
+        { id: "c1", title: "Monday", date: "2026-08-24" },
+        { id: "c2", title: "", date: "2026-08-25" },
+      ],
+    });
+    expect(roundTrip(input)).toEqual(input);
   });
 });
 
@@ -154,5 +197,79 @@ describe("parseBoardFile", () => {
     expect(parseBoardFile("columnOrder: 2026", "B").board.columnOrder).toBe(
       "2026",
     );
+  });
+
+  it("infers the type of a board written before types were explicit", () => {
+    expect(parseBoardFile("columnTagPrefix: sprint", "B").board.boardType).toBe(
+      "tag",
+    );
+    expect(parseBoardFile("query: not done", "B").board.boardType).toBe(
+      "status",
+    );
+  });
+
+  it("lets an explicit type win over the old implicit rule", () => {
+    const { board: parsed } = parseBoardFile(
+      "boardType: date\ncolumnTagPrefix: sprint",
+      "B",
+    );
+    expect(parsed.boardType).toBe("date");
+    // The tag settings survive, so switching back in the pane restores them.
+    expect(parsed.columnTagPrefix).toBe("sprint");
+  });
+
+  it("falls back to the default type for an unknown one", () => {
+    expect(parseBoardFile("boardType: nonsense", "B").board.boardType).toBe(
+      "status",
+    );
+  });
+
+  it("reads a hand-written date board, keyword and bare day included", () => {
+    const { board: parsed, errors } = parseBoardFile(
+      [
+        "boardType: date",
+        "dateField: due",
+        "dateColumns:",
+        "  - id: c1",
+        "    title: Monday",
+        "    date: 2026-08-24",
+      ].join("\n"),
+      "B",
+    );
+    expect(errors).toEqual([]);
+    expect(parsed.dateField).toBe("dueDate");
+    // A bare YYYY-MM-DD is a YAML timestamp; it must come back as the day.
+    expect(parsed.dateColumns).toEqual([
+      { id: "c1", title: "Monday", date: "2026-08-24" },
+    ]);
+  });
+
+  it("gives a date column with no id one, so its fold state has a key", () => {
+    const { board: parsed } = parseBoardFile(
+      ["dateColumns:", '  - date: "2026-08-24"'].join("\n"),
+      "B",
+    );
+    expect(parsed.dateColumns).toHaveLength(1);
+    expect(parsed.dateColumns[0].id).not.toBe("");
+  });
+
+  it("drops date columns with no usable day", () => {
+    const { board: parsed } = parseBoardFile(
+      [
+        "dateColumns:",
+        "  - id: a",
+        '    date: "nope"',
+        "  - id: b",
+        '    date: "2026-08-24"',
+      ].join("\n"),
+      "B",
+    );
+    expect(parsed.dateColumns.map((c) => c.id)).toEqual(["b"]);
+  });
+
+  it("reports a dateColumns key that is not a list", () => {
+    const { board: parsed, errors } = parseBoardFile("dateColumns: nope", "B");
+    expect(parsed.dateColumns).toEqual([]);
+    expect(errors).toHaveLength(1);
   });
 });

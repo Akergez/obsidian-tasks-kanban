@@ -1,5 +1,17 @@
 import { parseYaml } from "obsidian";
-import type { ColumnConfig } from "../types/persistence";
+import {
+  DEFAULT_BOARD_TYPE,
+  resolveBoardType,
+  type BoardType,
+  type ColumnConfig,
+  type DateColumnConfig,
+} from "../types/persistence";
+import {
+  dateFieldKeyword,
+  isValidColumnDate,
+  resolveDateField,
+} from "../utils/dateColumns";
+import { DEFAULT_DATE_FIELD, type DateField } from "../utils/dateFilter";
 
 /** File extension that marks a board document. */
 export const BOARD_EXTENSION = "kanban";
@@ -12,12 +24,18 @@ export const BOARD_EXTENSION = "kanban";
 export interface BoardFile {
   /** Display name. Defaults to the file's base name when the key is absent. */
   name: string;
+  /** Which kind of columns this board has. Always written, never inferred. */
+  boardType: BoardType;
   /** The board's own query lines (filters + sort + group). */
   query: string;
-  /** Tag-column prefix; "" ⇒ status columns. */
+  /** Tag-column prefix (tag boards). */
   columnTagPrefix: string;
   /** Tag-column order, comma-separated; "" ⇒ alphabetical. */
   columnOrder: string;
+  /** The date field a date board's columns are days of. */
+  dateField: DateField;
+  /** The days a date board shows, in order. */
+  dateColumns: DateColumnConfig[];
   /** Card-spine colour rules, one `<filter> -> <colour>` per line. */
   cardColors: string;
   /** Custom status-symbol columns; empty ⇒ default status columns. */
@@ -32,9 +50,12 @@ export interface BoardFile {
 export function emptyBoardFile(name: string): BoardFile {
   return {
     name,
+    boardType: DEFAULT_BOARD_TYPE,
     query: "",
     columnTagPrefix: "",
     columnOrder: "",
+    dateField: DEFAULT_DATE_FIELD,
+    dateColumns: [],
     cardColors: "",
     columns: [],
     collapsedColumns: [],
@@ -76,13 +97,21 @@ function stringList(key: string, values: string[]): string {
  * multi-line fields are guaranteed to come out as block scalars.
  */
 export function serializeBoardFile(board: BoardFile): string {
-  const lines: string[] = [`name: ${scalar(board.name)}`];
+  // boardType is always written, even at its default: it is what the board *is*,
+  // and a file that states it can never be read back as a different kind.
+  const lines: string[] = [
+    `name: ${scalar(board.name)}`,
+    `boardType: ${board.boardType}`,
+  ];
 
   if (board.columnTagPrefix !== "") {
     lines.push(`columnTagPrefix: ${scalar(board.columnTagPrefix)}`);
   }
   if (board.columnOrder !== "") {
     lines.push(`columnOrder: ${scalar(board.columnOrder)}`);
+  }
+  if (board.boardType === "date") {
+    lines.push(`dateField: ${dateFieldKeyword(board.dateField)}`);
   }
 
   if (board.query !== "") {
@@ -100,6 +129,17 @@ export function serializeBoardFile(board: BoardFile): string {
       lines.push(
         `    symbols: [${column.symbols.map((s) => JSON.stringify(s)).join(", ")}]`,
       );
+    }
+  }
+
+  if (board.dateColumns.length > 0) {
+    lines.push("", "dateColumns:");
+    for (const column of board.dateColumns) {
+      lines.push(`  - id: ${scalar(column.id)}`);
+      lines.push(`    title: ${scalar(column.title)}`);
+      // Quoted on purpose: YAML would otherwise read a bare `2026-08-24` as a
+      // timestamp and hand us back a Date.
+      lines.push(`    date: ${JSON.stringify(column.date)}`);
     }
   }
 
@@ -131,6 +171,44 @@ function asStringList(value: unknown): string[] {
     return [];
   }
   return value.filter((v): v is string => typeof v === "string");
+}
+
+/**
+ * Coerce a YAML value holding a day. A hand-written `date: 2026-08-24` is read
+ * by YAML as a timestamp, so a Date is accepted and put back into `YYYY-MM-DD`
+ * (its components are UTC midnight, so the ISO prefix is the day meant).
+ */
+function asDay(value: unknown): string {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? ""
+      : value.toISOString().slice(0, 10);
+  }
+  return asString(value).trim();
+}
+
+/** Coerce the `dateColumns:` block, dropping entries with no usable day. */
+function asDateColumns(value: unknown): DateColumnConfig[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const columns: DateColumnConfig[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "object" || raw === null) {
+      continue;
+    }
+    const entry = raw as Record<string, unknown>;
+    const date = asDay(entry.date);
+    if (!isValidColumnDate(date)) {
+      continue;
+    }
+    columns.push({
+      id: asString(entry.id) || crypto.randomUUID(),
+      title: asString(entry.title),
+      date,
+    });
+  }
+  return columns;
 }
 
 /** Coerce the `columns:` block, dropping entries that could not render. */
@@ -200,6 +278,9 @@ export function parseBoardFile(
   board.query = asString(doc.query);
   board.columnTagPrefix = asString(doc.columnTagPrefix).trim();
   board.columnOrder = asString(doc.columnOrder);
+  board.boardType = resolveBoardType(doc.boardType, board.columnTagPrefix);
+  board.dateField = resolveDateField(doc.dateField);
+  board.dateColumns = asDateColumns(doc.dateColumns);
   board.cardColors = asString(doc.cardColors);
   board.columns = asColumns(doc.columns);
   board.collapsedColumns = asStringList(doc.collapsedColumns);
@@ -207,6 +288,10 @@ export function parseBoardFile(
 
   if (doc.columns !== undefined && !Array.isArray(doc.columns)) {
     errors.push("`columns` must be a list; ignoring it.");
+  }
+
+  if (doc.dateColumns !== undefined && !Array.isArray(doc.dateColumns)) {
+    errors.push("`dateColumns` must be a list; ignoring it.");
   }
 
   return { board, errors };

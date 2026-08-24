@@ -11,6 +11,9 @@ export type DateField =
   | "doneDate"
   | "cancelledDate";
 
+/** The date field assumed when a board does not name one. */
+export const DEFAULT_DATE_FIELD: DateField = "scheduledDate";
+
 /**
  * Maps Tasks plugin date keywords to internal date fields.
  * Tasks uses: due, scheduled, start, created, done, cancelled

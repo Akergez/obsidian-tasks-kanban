@@ -2,12 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   NO_COLUMN_ID,
   buildTagColumns,
-  columnCollects,
   columnPart,
   parseColumnOrder,
   setColumnTag,
 } from "../src/utils/tagColumns";
-import type { KanbanColumnConfig } from "../src/utils/statusColumns";
 import type { Task } from "../src/services/TasksIntegration";
 
 function task(tags: string[], statusSymbol = " "): Task {
@@ -138,35 +136,6 @@ describe("parseColumnOrder", () => {
 
   it("returns nothing for an empty setting", () => {
     expect(parseColumnOrder("", "sprint")).toEqual([]);
-  });
-});
-
-describe("columnCollects", () => {
-  const columns = buildTagColumns([task(["#sprint_todo"])], "sprint");
-  const [catchAll, todo] = columns;
-
-  it("matches a tag column on the task's tag", () => {
-    expect(columnCollects(todo, task(["#sprint_todo"]))).toBe(true);
-    expect(columnCollects(todo, task(["#sprint_done"]))).toBe(false);
-  });
-
-  it("sends untagged tasks to the catch-all column", () => {
-    expect(columnCollects(catchAll, task(["#work"]))).toBe(true);
-    expect(columnCollects(catchAll, task([]))).toBe(true);
-    expect(columnCollects(catchAll, task(["#sprint_todo"]))).toBe(false);
-  });
-
-  it("still matches status columns on the status symbol", () => {
-    const statusColumn: KanbanColumnConfig = {
-      id: "todo",
-      title: "Todo",
-      symbols: [" "],
-      dropSymbol: " ",
-    };
-    expect(columnCollects(statusColumn, task(["#sprint_done"], " "))).toBe(
-      true,
-    );
-    expect(columnCollects(statusColumn, task([], "x"))).toBe(false);
   });
 });
 

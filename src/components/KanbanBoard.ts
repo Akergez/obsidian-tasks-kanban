@@ -8,7 +8,10 @@ import { SortBar } from "./SortBar";
 import { GroupBar } from "./GroupBar";
 import { QueryModal } from "./QueryModal";
 import { resolveColumns } from "../utils/statusColumns";
+import type { KanbanColumnConfig } from "../utils/statusColumns";
 import { buildTagColumns, parseColumnOrder } from "../utils/tagColumns";
+import { buildDateColumns } from "../utils/dateColumns";
+import type { DateField } from "../utils/dateFilter";
 import { parseColorRules, type ColorRule } from "../utils/cardColors";
 import { nestTasks, type SubTask } from "../utils/taskHierarchy";
 import { getUniqueTags } from "../utils/searchFilter";
@@ -30,7 +33,12 @@ import {
   withTitle,
   type BoardQuery,
 } from "../query/boardQuery";
-import type { BoardStatePersistence, ColumnConfig } from "../types/persistence";
+import type {
+  BoardStatePersistence,
+  BoardType,
+  ColumnConfig,
+  DateColumnConfig,
+} from "../types/persistence";
 
 export type { KanbanColumnConfig } from "../utils/statusColumns";
 
@@ -63,12 +71,18 @@ export class KanbanBoard {
   private collapsedColumns: Set<string>;
   /** Group keys (swimlane keys) currently folded; persisted across reopens. */
   private collapsedGroups: Set<string>;
+  /** Which kind of columns this board has. Set in settings. */
+  private boardType: BoardType;
   /** Custom columns for this board; empty ⇒ default status columns. */
   private columnConfigs: ColumnConfig[];
-  /** Tag-column prefix for this board; "" ⇒ status columns. Set in settings. */
+  /** Tag-column prefix for this board. Set in settings. */
   private columnTagPrefix: string;
   /** Tag-column order for this board; "" ⇒ alphabetical. Set in settings. */
   private columnOrder: string;
+  /** Date-column field for this board. Set in settings. */
+  private dateField: DateField;
+  /** Date columns for this board, in order. Set in settings. */
+  private dateColumns: DateColumnConfig[];
   /** Raw card-colour rules for this board, as typed in settings. */
   private cardColors: string;
   /** {@link cardColors} parsed; rebuilt whenever the raw setting changes. */
@@ -91,9 +105,12 @@ export class KanbanBoard {
     this.baseQuery = parseQuery(persistence.getBaseQuery()).query;
     this.collapsedColumns = new Set(initial.collapsedColumns);
     this.collapsedGroups = new Set(initial.collapsedGroups);
+    this.boardType = initial.boardType;
     this.columnConfigs = initial.columns;
     this.columnTagPrefix = initial.columnTagPrefix;
     this.columnOrder = initial.columnOrder;
+    this.dateField = initial.dateField;
+    this.dateColumns = initial.dateColumns;
     this.cardColors = initial.cardColors;
     this.colorRules = parseColorRules(this.cardColors).rules;
 
@@ -183,11 +200,14 @@ export class KanbanBoard {
   private persistState() {
     void this.persistence.save({
       query: serializeQuery(this.boardQuery),
+      boardType: this.boardType,
       collapsedColumns: [...this.collapsedColumns],
       collapsedGroups: [...this.collapsedGroups],
       columns: this.columnConfigs,
       columnTagPrefix: this.columnTagPrefix,
       columnOrder: this.columnOrder,
+      dateField: this.dateField,
+      dateColumns: this.dateColumns,
       cardColors: this.cardColors,
     });
   }
@@ -269,9 +289,12 @@ export class KanbanBoard {
     this.baseQuery = parseQuery(this.persistence.getBaseQuery()).query;
     this.collapsedColumns = new Set(state.collapsedColumns);
     this.collapsedGroups = new Set(state.collapsedGroups);
+    this.boardType = state.boardType;
     this.columnConfigs = state.columns;
     this.columnTagPrefix = state.columnTagPrefix;
     this.columnOrder = state.columnOrder;
+    this.dateField = state.dateField;
+    this.dateColumns = state.dateColumns;
     this.cardColors = state.cardColors;
     this.colorRules = parseColorRules(this.cardColors).rules;
     this.searchBar.setState({
@@ -302,26 +325,46 @@ export class KanbanBoard {
   }
 
   /**
+   * The columns to render, chosen by the board's declared type rather than by
+   * which optional field happens to be filled in.
+   *
+   * Tag columns are discovered from every task the board holds — not from the
+   * filtered ones — so a column doesn't vanish the moment a filter empties it.
+   * A tag board with no prefix yet has nothing to discover columns from, so it
+   * falls back to status columns until one is configured.
+   */
+  private resolveColumnConfigs(): KanbanColumnConfig[] {
+    if (this.boardType === "date") {
+      return buildDateColumns(this.dateField, this.dateColumns);
+    }
+    if (this.boardType === "tag" && this.columnTagPrefix !== "") {
+      return buildTagColumns(
+        this.allTasks,
+        this.columnTagPrefix,
+        parseColumnOrder(this.columnOrder, this.columnTagPrefix),
+      );
+    }
+    return resolveColumns(
+      this.columnConfigs,
+      this.tasksIntegration.getStatuses(),
+    );
+  }
+
+  /**
    * Reconcile the rendered lanes with the given groups. We rebuild the lanes
    * when either the ordered group keys or the resolved column set change;
    * otherwise we keep the lanes and just refresh their tasks (lanes are cheap and
    * these structural changes are infrequent). The column set is folded into the
-   * lane signature so editing custom columns (which doesn't change group keys)
-   * still re-renders.
-   *
-   * Tag columns are discovered from every task the board holds — not from the
-   * filtered ones — so a column doesn't vanish the moment a filter empties it.
+   * lane signature so editing columns (which doesn't change group keys) still
+   * re-renders — hence the signature carries every field a column matches on.
    */
   private renderLanes(groups: TaskGroup[]) {
-    const columnConfigs = this.columnTagPrefix
-      ? buildTagColumns(
-          this.allTasks,
-          this.columnTagPrefix,
-          parseColumnOrder(this.columnOrder, this.columnTagPrefix),
-        )
-      : resolveColumns(this.columnConfigs, this.tasksIntegration.getStatuses());
+    const columnConfigs = this.resolveColumnConfigs();
     const columnSignature = columnConfigs
-      .map((c) => `${c.id}:${c.symbols.join("")}`)
+      .map(
+        (c) =>
+          `${c.id}:${c.title}:${c.symbols.join("")}:${c.tag ?? ""}:${c.date ?? ""}`,
+      )
       .join("|");
     const keys = groups.map((g) => `${columnSignature}#${g.key}`);
     const sameLanes =

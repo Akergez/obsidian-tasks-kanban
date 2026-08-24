@@ -22,6 +22,19 @@ export function boardNameFromPath(path: string): string {
 }
 
 /**
+ * The path a board called `name` has inside `folder` ("" ⇒ the vault root).
+ *
+ * Unlike {@link BoardRepository.create}, this does not dodge a collision — it
+ * is for boards whose name *is* their identity (the weekly planner), where
+ * landing on the existing file is the point.
+ */
+export function boardPath(folder: string, name: string): string {
+  const file = `${sanitizeFileName(name) || "Board"}.${BOARD_EXTENSION}`;
+  const trimmed = folder.trim();
+  return trimmed === "" ? file : `${normalizePath(trimmed)}/${file}`;
+}
+
+/**
  * Reads and writes the `.kanban` board documents in the vault.
  *
  * Boards live as files the user can move, rename, sync and version like any
@@ -89,6 +102,20 @@ export class BoardRepository {
     }
     await this.ensureFolder(path);
     await this.app.vault.create(path, content);
+  }
+
+  /**
+   * Make sure a board exists at `path`, writing `board` there when it does not.
+   * An existing file is left exactly as it is — this is how reopening the
+   * weekly planner returns the board with the week's edits still on it, rather
+   * than a fresh one. Returns whether the file had to be created.
+   */
+  async ensure(path: string, board: BoardFile): Promise<boolean> {
+    if (this.app.vault.getAbstractFileByPath(path) instanceof TFile) {
+      return false;
+    }
+    await this.write(path, board);
+    return true;
   }
 
   /**

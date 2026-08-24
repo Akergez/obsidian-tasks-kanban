@@ -1,7 +1,12 @@
 import { type App, TFile } from "obsidian";
 import type { Task } from "./TasksIntegration";
 import type { TasksIntegration } from "./TasksIntegration";
-import { FIELD_SYNTAX, resolveTaskFormat } from "../utils/taskFormat";
+import {
+  FIELD_SYNTAX,
+  resolveTaskFormat,
+  setDateField,
+  type WritableDateField,
+} from "../utils/taskFormat";
 import { setColumnTag } from "../utils/tagColumns";
 
 /**
@@ -101,6 +106,23 @@ export class TaskUpdater {
     return this.rewriteTaskLine(task, (line) =>
       setColumnTag(line, tagPrefix, tag),
     );
+  }
+
+  /**
+   * Move a task between the columns of a date board: rewrite its line so its
+   * `field` date is `date`, or carries no such date when `date` is null (the
+   * catch-all column). The status symbol is left untouched — under date columns
+   * the board no longer owns it.
+   */
+  async updateTaskDate(
+    task: Task,
+    field: WritableDateField,
+    date: string | null,
+  ): Promise<boolean> {
+    return this.rewriteTaskLine(task, async (line) => {
+      const { taskFormat } = await this.tasksIntegration.getWriteSettings();
+      return setDateField(line, field, date, resolveTaskFormat(taskFormat));
+    });
   }
 
   /**

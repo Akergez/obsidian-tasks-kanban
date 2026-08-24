@@ -93,7 +93,11 @@ const DONE_TASK: Task = {
 };
 
 function mockIntegration(tasks: Task[]) {
-  const taskUpdater = { updateTaskStatus: vi.fn().mockResolvedValue(true) };
+  const taskUpdater = {
+    updateTaskStatus: vi.fn().mockResolvedValue(true),
+    updateTaskColumnTag: vi.fn().mockResolvedValue(true),
+    updateTaskDate: vi.fn().mockResolvedValue(true),
+  };
   return {
     getTasks: vi.fn().mockReturnValue(tasks),
     taskUpdater,
@@ -106,6 +110,85 @@ describe("KanbanColumn", () => {
 
   beforeEach(() => {
     container = document.createElement("div");
+  });
+
+  // ── Date columns: a drop writes the day, not the status ───────
+
+  describe("drop into a date column", () => {
+    const mondayConfig: KanbanColumnConfig = {
+      id: "c1",
+      title: "Monday",
+      symbols: [],
+      dropSymbol: "",
+      dateField: "scheduledDate",
+      date: "2026-08-24",
+    };
+    const noDateConfig: KanbanColumnConfig = {
+      ...mondayConfig,
+      id: "__no-date__",
+      title: "No date",
+      date: "",
+    };
+
+    /** Drop the task at notes.md:5 into a column built from `config`. */
+    function dropDoneTask(config: KanbanColumnConfig, task: Task = DONE_TASK) {
+      const integration = mockIntegration([task]);
+      const col = new KanbanColumn(
+        container,
+        config,
+        integration as any,
+        false,
+      );
+      const cards = container.querySelector<HTMLElement>(
+        ".tasks-kanban-column-cards",
+      )!;
+      cards.dispatchEvent(
+        dragEvent(
+          "drop",
+          stubDataTransfer({
+            "application/task-path": "notes.md",
+            "application/task-line": "5",
+          }),
+        ),
+      );
+      col.destroy();
+      return integration;
+    }
+
+    it("writes the column's day into the board's date field", () => {
+      const integration = dropDoneTask(mondayConfig);
+      expect(integration.taskUpdater.updateTaskDate).toHaveBeenCalledWith(
+        DONE_TASK,
+        "scheduledDate",
+        "2026-08-24",
+      );
+    });
+
+    it("leaves the status symbol alone", () => {
+      const integration = dropDoneTask(mondayConfig);
+      expect(integration.taskUpdater.updateTaskStatus).not.toHaveBeenCalled();
+    });
+
+    it("clears the field when dropped into the no-date column", () => {
+      const dated: Task = { ...DONE_TASK, scheduledDate: "2026-08-24" };
+      const integration = dropDoneTask(noDateConfig, dated);
+      expect(integration.taskUpdater.updateTaskDate).toHaveBeenCalledWith(
+        dated,
+        "scheduledDate",
+        null,
+      );
+    });
+
+    it("does nothing when the task is already in this column", () => {
+      const dated: Task = { ...DONE_TASK, scheduledDate: "2026-08-24" };
+      const integration = dropDoneTask(mondayConfig, dated);
+      expect(integration.taskUpdater.updateTaskDate).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when an undated task is dropped into No date", () => {
+      const integration = dropDoneTask(noDateConfig);
+      expect(integration.taskUpdater.updateTaskDate).not.toHaveBeenCalled();
+    });
   });
 
   // ── Expanded: drag events on the cards container ──────────────

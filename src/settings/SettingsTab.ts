@@ -8,10 +8,22 @@ import {
 
 import { parseQuery } from "../query/boardQuery";
 import { parseColorRules } from "../utils/cardColors";
-import type { ColumnConfig } from "../types/persistence";
+import type {
+  BoardType,
+  ColumnConfig,
+  DateColumnConfig,
+} from "../types/persistence";
 import { BOARD_EXTENSION, type BoardFile } from "../query/boardFile";
 import type { BoardEntry } from "../services/BoardRepository";
 import type { StatusInfo } from "../services/TasksIntegration";
+import {
+  DATE_FIELDS,
+  DATE_FIELD_LABELS,
+  isValidColumnDate,
+  todayISO,
+} from "../utils/dateColumns";
+import type { DateField } from "../utils/dateFilter";
+import type { TaskFormatSetting } from "../utils/taskFormat";
 import type TasksKanbanPlugin from "../main";
 import type { SettingsSlice } from "../main";
 
@@ -26,9 +38,49 @@ const QUERY_PLACEHOLDER = [
   "group by priority",
 ].join("\n");
 
+/**
+ * The part of a board that decides its columns. A {@link BoardFile} already has
+ * this shape, and the base board keeps a working copy of it, so one set of
+ * controls edits either.
+ */
+type ColumnSlice = Pick<
+  BoardFile,
+  | "boardType"
+  | "columnTagPrefix"
+  | "columnOrder"
+  | "dateField"
+  | "dateColumns"
+  | "columns"
+>;
+
+/** Dropdown labels for the three board types. */
+const BOARD_TYPE_LABELS: Record<BoardType, string> = {
+  status: "Status columns",
+  tag: "Tag columns",
+  date: "Date columns",
+};
+
+/** Shared description of the board-type control (pane + settings search). */
+const BOARD_TYPE_DESC =
+  "What the columns of this board are. Status: one column per status type, or " +
+  "your own partition over status symbols. Tag: one column per #<prefix>_<column> " +
+  "tag on your tasks. Date: one column per day you name, on one date field.";
+
+/** Dropdown labels for this plugin's task-format setting. */
+const TASK_FORMAT_LABELS: Record<TaskFormatSetting, string> = {
+  auto: "Follow the Tasks plugin",
+  tasksPluginEmoji: "Emoji (📅 2026-08-24)",
+  dataview: "Dataview ([due:: 2026-08-24])",
+};
+
+/** Shared description of the task-format control (pane + settings search). */
+const TASK_FORMAT_DESC =
+  "How dates are written back into your notes when you drag a card. Follow the " +
+  "Tasks plugin reads its own Task Format setting; pick a format to pin it.";
+
 /** Shared description of the column-tag-prefix control (pane + settings search). */
 const TAG_PREFIX_DESC =
-  "Empty: columns come from task statuses. Set (e.g. 'sprint'): one column per " +
+  "Shared prefix of this board's column tags (e.g. 'sprint'): one column per " +
   "#sprint_<column> tag found, ordered alphabetically, plus a 'No column' column. " +
   "Dragging a card rewrites the tag.";
 
@@ -37,6 +89,23 @@ const COLUMN_ORDER_DESC =
   "Comma-separated column names (the part after the prefix), leftmost first — " +
   "e.g. 'todo, doing, done'. Columns not listed follow alphabetically. A listed " +
   "column shows up even when no task carries its tag yet. Empty: all alphabetical.";
+
+/** Shared description of the date-field control (pane + settings search). */
+const DATE_FIELD_DESC =
+  "The task date this board's columns are days of. Dragging a card writes that " +
+  "day into this field.";
+
+/** Shared description of the date-columns editor. */
+const DATE_COLUMNS_DESC =
+  "One column per exact day. A task lands in the column matching its date; a task " +
+  "whose date matches no column is hidden. Tasks with no date go to 'No date', and " +
+  "dropping a card there clears the field.";
+
+/** Shared description of the weekly-planner folder (pane + settings search). */
+const WEEKLY_FOLDER_DESC =
+  "Vault folder the weekly planner's boards are created in. The ribbon's " +
+  "calendar button opens this week's board there, creating it the first time. " +
+  "Keeping it inside the boards folder also lists those boards below.";
 
 /** Shared description of the card-colour control (pane + settings search). */
 const CARD_COLORS_DESC =
@@ -51,7 +120,7 @@ const CARD_COLORS_PLACEHOLDER = [
   "due before today -> orange",
 ].join("\n");
 
-/** A unique id generator for new custom columns. */
+/** A unique id generator for new columns. */
 function newColumnId(): string {
   return crypto.randomUUID();
 }
@@ -62,20 +131,22 @@ function newColumnId(): string {
  * Edits the shared base board plus every `.kanban` board file in the vault.
  * All edits are kept in working copies and committed together via Save, which
  * writes the base slice to data.json and each board back to its own file; the
- * Save button is disabled while any query or colour rule has parse errors.
+ * Save button is disabled while any query, colour rule or column date is
+ * invalid.
  */
 export class TasksKanbanSettingsTab extends PluginSettingTab {
   private plugin: TasksKanbanPlugin;
 
   // Working copies, committed on Save.
+  private taskFormat: TaskFormatSetting = "auto";
   private baseQuery = "";
-  private baseColumns: ColumnConfig[] = [];
-  private baseColumnTagPrefix = "";
-  private baseColumnOrder = "";
   private baseCardColors = "";
+  /** The base board's column slice, edited by the same controls as a file's. */
+  private baseSlice: ColumnSlice = emptySlice();
   /** Board files loaded from disk, edited in place and written back on Save. */
   private boards: { path: string; board: BoardFile }[] = [];
   private boardsFolder = "";
+  private weeklyPlannerFolder = "";
   /** Paths deleted in the pane, removed from disk on Save. */
   private deletedBoards: string[] = [];
 
@@ -94,8 +165,32 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     return [
       {
         type: "group",
+        heading: "Tasks integration",
+        items: [
+          {
+            name: "Task format",
+            desc: TASK_FORMAT_DESC,
+            control: {
+              type: "dropdown",
+              key: "taskFormat",
+              options: TASK_FORMAT_LABELS,
+            },
+          },
+        ],
+      },
+      {
+        type: "group",
         heading: "Base board",
         items: [
+          {
+            name: "Board type",
+            desc: BOARD_TYPE_DESC,
+            control: {
+              type: "dropdown",
+              key: "baseBoardType",
+              options: BOARD_TYPE_LABELS,
+            },
+          },
           {
             name: "Base query",
             desc: "The query is applied on top of every board; saved boards are merged with it. One instruction per line.",
@@ -125,6 +220,15 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
             },
           },
           {
+            name: "Date field",
+            desc: DATE_FIELD_DESC,
+            control: {
+              type: "dropdown",
+              key: "baseDateField",
+              options: dateFieldOptions(),
+            },
+          },
+          {
             name: "Card colours",
             desc: CARD_COLORS_DESC,
             control: {
@@ -148,6 +252,15 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
               placeholder: "Kanban",
             },
           },
+          {
+            name: "Weekly planner folder",
+            desc: WEEKLY_FOLDER_DESC,
+            control: {
+              type: "text",
+              key: "weeklyPlannerFolder",
+              placeholder: "Kanban/Weekly",
+            },
+          },
         ],
       },
     ];
@@ -155,8 +268,14 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
 
   getControlValue(key: string): unknown {
     const data = this.plugin.getPluginData();
+    if (key === "taskFormat") {
+      return data.taskFormat;
+    }
     if (key === "baseQuery") {
       return data.baseQuery;
+    }
+    if (key === "baseBoardType") {
+      return data.baseBoardType;
     }
     if (key === "baseColumnsEnabled") {
       return data.baseColumns.length > 0;
@@ -167,11 +286,17 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     if (key === "baseColumnOrder") {
       return data.baseColumnOrder;
     }
+    if (key === "baseDateField") {
+      return data.baseDateField;
+    }
     if (key === "baseCardColors") {
       return data.baseCardColors;
     }
     if (key === "boardsFolder") {
       return data.boardsFolder;
+    }
+    if (key === "weeklyPlannerFolder") {
+      return data.weeklyPlannerFolder;
     }
     return undefined;
   }
@@ -183,15 +308,28 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     const commit = (patch: Partial<SettingsSlice>) =>
       this.plugin.saveSettings({
         baseQuery: data.baseQuery,
+        taskFormat: data.taskFormat,
+        baseBoardType: data.baseBoardType,
         baseColumns: data.baseColumns,
         baseColumnTagPrefix: data.baseColumnTagPrefix,
         baseColumnOrder: data.baseColumnOrder,
+        baseDateField: data.baseDateField,
+        baseDateColumns: data.baseDateColumns,
         baseCardColors: data.baseCardColors,
         boardsFolder: data.boardsFolder,
+        weeklyPlannerFolder: data.weeklyPlannerFolder,
         ...patch,
       });
+    if (key === "taskFormat") {
+      await commit({ taskFormat: value as TaskFormatSetting });
+      return;
+    }
     if (key === "baseQuery") {
       await commit({ baseQuery: value as string });
+      return;
+    }
+    if (key === "baseBoardType") {
+      await commit({ baseBoardType: value as BoardType });
       return;
     }
     if (key === "baseColumnsEnabled") {
@@ -210,6 +348,10 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       await commit({ baseColumnOrder: value as string });
       return;
     }
+    if (key === "baseDateField") {
+      await commit({ baseDateField: value as DateField });
+      return;
+    }
     if (key === "baseCardColors") {
       await commit({ baseCardColors: value as string });
       return;
@@ -218,20 +360,28 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       await commit({ boardsFolder: (value as string).trim() });
       return;
     }
+    if (key === "weeklyPlannerFolder") {
+      await commit({ weeklyPlannerFolder: (value as string).trim() });
+      return;
+    }
   }
 
   display(): void {
     // Seed working copies from the plugin's current data each time the tab opens.
     const data = this.plugin.getPluginData();
+    this.taskFormat = data.taskFormat;
     this.baseQuery = data.baseQuery;
-    this.baseColumns = data.baseColumns.map((c) => ({
-      ...c,
-      symbols: [...c.symbols],
-    }));
-    this.baseColumnTagPrefix = data.baseColumnTagPrefix;
-    this.baseColumnOrder = data.baseColumnOrder;
     this.baseCardColors = data.baseCardColors;
+    this.baseSlice = {
+      boardType: data.baseBoardType,
+      columnTagPrefix: data.baseColumnTagPrefix,
+      columnOrder: data.baseColumnOrder,
+      dateField: data.baseDateField,
+      dateColumns: data.baseDateColumns.map((c) => ({ ...c })),
+      columns: data.baseColumns.map((c) => ({ ...c, symbols: [...c.symbols] })),
+    };
     this.boardsFolder = data.boardsFolder;
+    this.weeklyPlannerFolder = data.weeklyPlannerFolder;
     this.boards = [];
     this.deletedBoards = [];
     this.errors.clear();
@@ -265,26 +415,31 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     containerEl.empty();
     this.saveButton = null;
 
+    new Setting(containerEl).setName("Tasks integration").setHeading();
+
+    new Setting(containerEl)
+      .setName("Task format")
+      .setDesc(TASK_FORMAT_DESC)
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOptions(TASK_FORMAT_LABELS)
+          .setValue(this.taskFormat)
+          .onChange((value) => {
+            this.taskFormat = value as TaskFormatSetting;
+          });
+      });
+
     new Setting(containerEl).setName("Base board").setHeading();
 
     containerEl.createEl("p", {
       cls: "tasks-kanban-settings-help",
-      text: "The query is applied on top of every board; saved boards are merged with it. Columns apply to the default board.",
+      text: "The query is applied on top of every board; saved boards are merged with it. The board type and columns apply to the default board.",
     });
 
     this.renderQueryField(containerEl, "base", this.baseQuery, (value) => {
       this.baseQuery = value;
     });
-    this.renderTagColumnsSection(
-      containerEl,
-      { prefix: this.baseColumnTagPrefix, order: this.baseColumnOrder },
-      (value) => {
-        this.baseColumnTagPrefix = value;
-      },
-      (value) => {
-        this.baseColumnOrder = value;
-      },
-    );
+    this.renderColumnsSection(containerEl, "base", this.baseSlice);
     this.renderCardColorsField(
       containerEl,
       "base-colors",
@@ -293,11 +448,6 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
         this.baseCardColors = value;
       },
     );
-    if (!this.baseColumnTagPrefix) {
-      this.renderColumnsSection(containerEl, this.baseColumns, (next) => {
-        this.baseColumns = next;
-      });
-    }
 
     new Setting(containerEl).setName("Boards").setHeading();
 
@@ -317,6 +467,18 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
           .setValue(this.boardsFolder)
           .onChange((value) => {
             this.boardsFolder = value.trim();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Weekly planner folder")
+      .setDesc(WEEKLY_FOLDER_DESC)
+      .addText((text) => {
+        text
+          .setPlaceholder("Kanban/Weekly")
+          .setValue(this.weeklyPlannerFolder)
+          .onChange((value) => {
+            this.weeklyPlannerFolder = value.trim();
           });
       });
 
@@ -370,6 +532,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
             this.boards = this.boards.filter((b) => b.path !== path);
             this.errors.delete(path);
             this.errors.delete(`${path}-colors`);
+            this.errors.delete(`${path}-dates`);
             this.render();
           });
       });
@@ -377,16 +540,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     this.renderQueryField(containerEl, path, board.query, (value) => {
       board.query = value;
     });
-    this.renderTagColumnsSection(
-      containerEl,
-      { prefix: board.columnTagPrefix, order: board.columnOrder },
-      (value) => {
-        board.columnTagPrefix = value;
-      },
-      (value) => {
-        board.columnOrder = value;
-      },
-    );
+    this.renderColumnsSection(containerEl, path, board);
     this.renderCardColorsField(
       containerEl,
       `${path}-colors`,
@@ -395,11 +549,6 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
         board.cardColors = value;
       },
     );
-    if (!board.columnTagPrefix) {
-      this.renderColumnsSection(containerEl, board.columns, (next) => {
-        board.columns = next;
-      });
-    }
   }
 
   /** Create a new board file on disk, then reload the pane's list. */
@@ -413,20 +562,48 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
   }
 
   /**
-   * Render the tag-column fields for one board: the prefix, plus the column
-   * order once the prefix is set.
+   * Render one board's column configuration: the board-type picker, then only
+   * the fields that type uses.
    *
-   * A non-empty prefix switches the board to tag columns: one column per
-   * distinct `#<prefix>_<column>` tag found on the tasks, plus a catch-all for
-   * tasks carrying none, and dropping a card rewrites that tag instead of the
-   * status symbol. Leaving it empty keeps the status columns, so the prefix
-   * field re-renders the pane to show or hide what depends on it.
+   * The type is an explicit choice, not a side effect of filling in a field —
+   * so the other types' settings are kept in the working copy while hidden, and
+   * switching back restores them. `key` scopes this board's error entries.
    */
-  private renderTagColumnsSection(
+  private renderColumnsSection(
     containerEl: HTMLElement,
-    values: { prefix: string; order: string },
-    onPrefixChange: (value: string) => void,
-    onOrderChange: (value: string) => void,
+    key: string,
+    slice: ColumnSlice,
+  ): void {
+    new Setting(containerEl)
+      .setName("Board type")
+      .setDesc(BOARD_TYPE_DESC)
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOptions(BOARD_TYPE_LABELS)
+          .setValue(slice.boardType)
+          .onChange((value) => {
+            slice.boardType = value as BoardType;
+            seedForType(slice);
+            // A different type means a different set of fields below.
+            this.render();
+          });
+      });
+
+    if (slice.boardType === "tag") {
+      this.renderTagColumnFields(containerEl, slice);
+      return;
+    }
+    if (slice.boardType === "date") {
+      this.renderDateColumnFields(containerEl, key, slice);
+      return;
+    }
+    this.renderStatusColumnFields(containerEl, slice);
+  }
+
+  /** Tag boards: the shared tag prefix and the column order. */
+  private renderTagColumnFields(
+    containerEl: HTMLElement,
+    slice: ColumnSlice,
   ): void {
     new Setting(containerEl)
       .setName("Column tag prefix")
@@ -434,18 +611,11 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       .addText((text) => {
         text
           .setPlaceholder("sprint")
-          .setValue(values.prefix)
+          .setValue(slice.columnTagPrefix)
           .onChange((value) => {
-            onPrefixChange(normalizeTagPrefix(value));
+            slice.columnTagPrefix = normalizeTagPrefix(value);
           });
-        // Showing/hiding the fields below needs a full re-render, which would
-        // blur the field mid-typing — so only do it once the user leaves.
-        text.inputEl.addEventListener("blur", () => this.render());
       });
-
-    if (!values.prefix) {
-      return;
-    }
 
     new Setting(containerEl)
       .setName("Column order")
@@ -453,27 +623,136 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       .addText((text) => {
         text
           .setPlaceholder("todo, doing, done")
-          .setValue(values.order)
-          .onChange(onOrderChange);
+          .setValue(slice.columnOrder)
+          .onChange((value) => {
+            slice.columnOrder = value;
+          });
       });
   }
 
+  /** Date boards: the date field, then one row per configured day. */
+  private renderDateColumnFields(
+    containerEl: HTMLElement,
+    key: string,
+    slice: ColumnSlice,
+  ): void {
+    new Setting(containerEl)
+      .setName("Date field")
+      .setDesc(DATE_FIELD_DESC)
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOptions(dateFieldOptions())
+          .setValue(slice.dateField)
+          .onChange((value) => {
+            slice.dateField = value as DateField;
+          });
+      });
+
+    const errorKey = `${key}-dates`;
+    new Setting(containerEl)
+      .setName("Date columns")
+      .setDesc(DATE_COLUMNS_DESC)
+      .addButton((button) => {
+        button.setButtonText("Add column").onClick(() => {
+          slice.dateColumns = [
+            ...slice.dateColumns,
+            { id: newColumnId(), title: "", date: todayISO() },
+          ];
+          this.render();
+        });
+      });
+
+    const errorEl = containerEl.createDiv({
+      cls: "tasks-kanban-settings-errors",
+    });
+
+    for (const column of slice.dateColumns) {
+      new Setting(containerEl)
+        .setClass("tasks-kanban-setting-column")
+        .addText((text) => {
+          text
+            .setPlaceholder("Column name (optional)")
+            .setValue(column.title)
+            .onChange((value) => {
+              column.title = value;
+            });
+        })
+        .addText((text) => {
+          text.inputEl.type = "date";
+          text.setValue(column.date).onChange((value) => {
+            column.date = value;
+            this.validateDateColumns(errorKey, slice.dateColumns, errorEl);
+          });
+        })
+        .addExtraButton((button) => {
+          button
+            .setIcon("trash")
+            .setTooltip("Delete column")
+            .onClick(() => {
+              slice.dateColumns = slice.dateColumns.filter(
+                (c) => c.id !== column.id,
+              );
+              this.render();
+            });
+        });
+    }
+
+    this.validateDateColumns(errorKey, slice.dateColumns, errorEl);
+  }
+
+  /** Reject unusable days, surface why, and keep Save in sync. */
+  private validateDateColumns(
+    key: string,
+    columns: DateColumnConfig[],
+    errorEl: HTMLElement,
+  ): void {
+    const errors: string[] = [];
+    const seen = new Set<string>();
+    columns.forEach((column, index) => {
+      const label = column.title.trim() || `Column ${index + 1}`;
+      const date = column.date.trim();
+      if (date === "") {
+        errors.push(`${label}: pick a day for this column.`);
+        return;
+      }
+      if (!isValidColumnDate(date)) {
+        errors.push(`${label}: "${date}" is not a date (use YYYY-MM-DD).`);
+        return;
+      }
+      if (seen.has(date)) {
+        errors.push(`${label}: ${date} is already used by another column.`);
+        return;
+      }
+      seen.add(date);
+    });
+
+    if (errors.length === 0) {
+      this.errors.delete(key);
+    } else {
+      this.errors.set(key, errors);
+    }
+
+    errorEl.empty();
+    for (const error of errors) {
+      errorEl.createDiv({ cls: "tasks-kanban-settings-error", text: error });
+    }
+
+    this.saveButton?.setDisabled(this.hasErrors());
+  }
+
   /**
-   * Render the custom-columns editor for one board's column slice.
+   * Status boards: default status columns, or a custom set.
    *
    * A toggle switches between default status columns (`columns` empty) and a
    * custom set. When custom, each column has a name, a status-symbol multi-select
    * (the first checked symbol is the drop target), and a delete button, plus an
-   * "Add column" button. Structural edits (toggle/add/delete) re-render the pane;
-   * `onChange` hands the updated array back so the caller's working copy stays in
-   * sync (the base slice is a field, a board's is a property).
+   * "Add column" button. Structural edits (toggle/add/delete) re-render the pane.
    */
-  private renderColumnsSection(
+  private renderStatusColumnFields(
     containerEl: HTMLElement,
-    columns: ColumnConfig[],
-    onChange: (columns: ColumnConfig[]) => void,
+    slice: ColumnSlice,
   ): void {
-    const custom = columns.length > 0;
+    const custom = slice.columns.length > 0;
 
     new Setting(containerEl)
       .setName("Custom columns")
@@ -483,9 +762,9 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       .addToggle((toggle) => {
         toggle.setValue(custom).onChange((value) => {
           // Turning on seeds one empty column; turning off clears the set.
-          onChange(
-            value ? [{ id: newColumnId(), title: "", symbols: [] }] : [],
-          );
+          slice.columns = value
+            ? [{ id: newColumnId(), title: "", symbols: [] }]
+            : [];
           this.render();
         });
       });
@@ -495,13 +774,16 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     }
 
     const statuses = this.plugin.getStatuses();
-    for (const column of columns) {
-      this.renderColumnRow(containerEl, column, columns, onChange, statuses);
+    for (const column of slice.columns) {
+      this.renderColumnRow(containerEl, column, slice, statuses);
     }
 
     new Setting(containerEl).addButton((button) => {
       button.setButtonText("Add column").onClick(() => {
-        onChange([...columns, { id: newColumnId(), title: "", symbols: [] }]);
+        slice.columns = [
+          ...slice.columns,
+          { id: newColumnId(), title: "", symbols: [] },
+        ];
         this.render();
       });
     });
@@ -511,8 +793,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
   private renderColumnRow(
     containerEl: HTMLElement,
     column: ColumnConfig,
-    columns: ColumnConfig[],
-    onChange: (columns: ColumnConfig[]) => void,
+    slice: ColumnSlice,
     statuses: StatusInfo[],
   ): void {
     const setting = new Setting(containerEl)
@@ -530,7 +811,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
           .setIcon("trash")
           .setTooltip("Delete column")
           .onClick(() => {
-            onChange(columns.filter((c) => c.id !== column.id));
+            slice.columns = slice.columns.filter((c) => c.id !== column.id);
             this.render();
           });
       });
@@ -729,17 +1010,30 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     if (this.hasErrors()) {
       return;
     }
-    // Drop columns left without a name or any symbols — they can't render.
-    const clean = (columns: ColumnConfig[] | undefined): ColumnConfig[] =>
-      (columns ?? []).filter((c) => c.symbols.length > 0);
+    // Drop columns left without any symbols, or without a usable day — neither
+    // could render.
+    const cleanColumns = (
+      columns: ColumnConfig[] | undefined,
+    ): ColumnConfig[] => (columns ?? []).filter((c) => c.symbols.length > 0);
+    const cleanDates = (
+      columns: DateColumnConfig[] | undefined,
+    ): DateColumnConfig[] =>
+      (columns ?? [])
+        .map((c) => ({ ...c, date: c.date.trim() }))
+        .filter((c) => isValidColumnDate(c.date));
 
     await this.plugin.saveSettings({
       baseQuery: this.baseQuery,
-      baseColumns: clean(this.baseColumns),
-      baseColumnTagPrefix: this.baseColumnTagPrefix,
-      baseColumnOrder: this.baseColumnOrder,
+      taskFormat: this.taskFormat,
+      baseBoardType: this.baseSlice.boardType,
+      baseColumns: cleanColumns(this.baseSlice.columns),
+      baseColumnTagPrefix: this.baseSlice.columnTagPrefix,
+      baseColumnOrder: this.baseSlice.columnOrder,
+      baseDateField: this.baseSlice.dateField,
+      baseDateColumns: cleanDates(this.baseSlice.dateColumns),
       baseCardColors: this.baseCardColors,
       boardsFolder: this.boardsFolder,
+      weeklyPlannerFolder: this.weeklyPlannerFolder,
     });
 
     // Boards live in the vault, so they are written file by file. Deletions are
@@ -752,11 +1046,47 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     this.deletedBoards = [];
 
     for (const { path, board } of this.boards) {
-      await repository.write(path, { ...board, columns: clean(board.columns) });
+      await repository.write(path, {
+        ...board,
+        columns: cleanColumns(board.columns),
+        dateColumns: cleanDates(board.dateColumns),
+      });
     }
 
     // An open board reads its own file, so make it re-read after we rewrote it.
     this.plugin.refreshOpenBoards();
+  }
+}
+
+/** The base board's slice before the plugin's data has been read. */
+function emptySlice(): ColumnSlice {
+  return {
+    boardType: "status",
+    columnTagPrefix: "",
+    columnOrder: "",
+    dateField: DATE_FIELDS[0],
+    dateColumns: [],
+    columns: [],
+  };
+}
+
+/** Dropdown options for the date field, in lifecycle order. */
+function dateFieldOptions(): Record<string, string> {
+  const options: Record<string, string> = {};
+  for (const field of DATE_FIELDS) {
+    options[field] = DATE_FIELD_LABELS[field];
+  }
+  return options;
+}
+
+/**
+ * Give a freshly chosen board type something to show. A date board with no days
+ * would hide every dated task, which reads as a broken board rather than an
+ * unconfigured one — so it starts on today.
+ */
+function seedForType(slice: ColumnSlice): void {
+  if (slice.boardType === "date" && slice.dateColumns.length === 0) {
+    slice.dateColumns = [{ id: newColumnId(), title: "", date: todayISO() }];
   }
 }
 

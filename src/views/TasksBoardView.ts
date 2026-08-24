@@ -85,11 +85,14 @@ export class TasksBoardView extends TextFileView {
     }
     return {
       query: this.board.query,
+      boardType: this.board.boardType,
       collapsedColumns: this.board.collapsedColumns,
       collapsedGroups: this.board.collapsedGroups,
       columns: this.board.columns,
       columnTagPrefix: this.board.columnTagPrefix,
       columnOrder: this.board.columnOrder,
+      dateField: this.board.dateField,
+      dateColumns: this.board.dateColumns,
       cardColors: this.board.cardColors,
     };
   }
@@ -107,11 +110,14 @@ export class TasksBoardView extends TextFileView {
     this.board = {
       ...this.board,
       query: state.query,
+      boardType: state.boardType,
       collapsedColumns: state.collapsedColumns,
       collapsedGroups: state.collapsedGroups,
       columns: state.columns,
       columnTagPrefix: state.columnTagPrefix,
       columnOrder: state.columnOrder,
+      dateField: state.dateField,
+      dateColumns: state.dateColumns,
       cardColors: state.cardColors,
     };
     this.requestSave();

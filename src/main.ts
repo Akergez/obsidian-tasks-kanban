@@ -4,15 +4,24 @@ import { TasksBoardView, BOARD_VIEW_TYPE } from "./views/TasksBoardView";
 import { TasksIntegration, type StatusInfo } from "./services/TasksIntegration";
 import { TasksKanbanSettingsTab } from "./settings/SettingsTab";
 import { BoardPickerModal } from "./components/BoardPickerModal";
-import { BoardRepository, type BoardEntry } from "./services/BoardRepository";
+import {
+  BoardRepository,
+  boardPath,
+  type BoardEntry,
+} from "./services/BoardRepository";
 import { BOARD_EXTENSION, emptyBoardFile } from "./query/boardFile";
 import {
   DEFAULT_PLUGIN_DATA,
+  resolveBoardType,
   type BoardOwnState,
   type BoardStatePersistence,
   type LegacyBoardState,
   type PluginData,
 } from "./types/persistence";
+import { resolveDateField } from "./utils/dateColumns";
+import { DEFAULT_DATE_FIELD } from "./utils/dateFilter";
+import { resolveTaskFormatSetting } from "./utils/taskFormat";
+import { buildWeeklyBoard, startOfWeek } from "./utils/weeklyBoard";
 import {
   EMPTY_QUERY,
   serializeQuery,
@@ -28,11 +37,16 @@ import {
 export type SettingsSlice = Pick<
   PluginData,
   | "baseQuery"
+  | "taskFormat"
+  | "baseBoardType"
   | "baseColumns"
   | "baseColumnTagPrefix"
   | "baseColumnOrder"
+  | "baseDateField"
+  | "baseDateColumns"
   | "baseCardColors"
   | "boardsFolder"
+  | "weeklyPlannerFolder"
 >;
 
 /**
@@ -92,11 +106,14 @@ export default class TasksKanbanPlugin extends Plugin {
       getBaseQuery: () => this.data.baseQuery,
       get: () => ({
         query: this.data.baseQuery,
+        boardType: this.data.baseBoardType,
         collapsedColumns: this.data.baseCollapsedColumns,
         collapsedGroups: this.data.baseCollapsedGroups,
         columns: this.data.baseColumns,
         columnTagPrefix: this.data.baseColumnTagPrefix,
         columnOrder: this.data.baseColumnOrder,
+        dateField: this.data.baseDateField,
+        dateColumns: this.data.baseDateColumns,
         cardColors: this.data.baseCardColors,
       }),
       save: (state: BoardOwnState) => {
@@ -134,6 +151,25 @@ export default class TasksKanbanPlugin extends Plugin {
   }
 
   /**
+   * Open this week's planner, creating it the first time it is asked for.
+   *
+   * The board's name is its ISO week (`2026-W35`), which is also its file name,
+   * so the same week always resolves to the same file: asking again later in
+   * the week reopens the board you have been planning in, edits and all. A new
+   * week simply has no file yet, so one is written.
+   */
+  async openWeeklyPlanner(): Promise<string> {
+    const board = buildWeeklyBoard(startOfWeek(new Date()), DEFAULT_DATE_FIELD);
+    const path = boardPath(this.data.weeklyPlannerFolder, board.name);
+    const created = await this.getBoardRepository().ensure(path, board);
+    if (created) {
+      new Notice(`Tasks Kanban: created ${path}`);
+    }
+    await this.openBoard(path);
+    return path;
+  }
+
+  /**
    * Create a fresh board file and open it. Returns the new file's path.
    */
   async createAndOpenBlankBoard(): Promise<string> {
@@ -153,7 +189,10 @@ export default class TasksKanbanPlugin extends Plugin {
 
     await this.loadPluginData();
 
-    this.tasksIntegration = new TasksIntegration(this.app);
+    this.tasksIntegration = new TasksIntegration(
+      this.app,
+      () => this.data.taskFormat,
+    );
 
     this.addSettingTab(new TasksKanbanSettingsTab(this.app, this));
 
@@ -196,6 +235,18 @@ export default class TasksKanbanPlugin extends Plugin {
         void this.createAndOpenBlankBoard();
       },
     });
+
+    this.addCommand({
+      id: "open-weekly-planner",
+      name: "Open weekly planner",
+      callback: () => {
+        void this.openWeeklyPlanner();
+      },
+    });
+
+    this.addRibbonIcon("calendar-days", "Open weekly planner", () => {
+      void this.openWeeklyPlanner();
+    });
   }
 
   onunload() {
@@ -217,8 +268,17 @@ export default class TasksKanbanPlugin extends Plugin {
   private async loadPluginData() {
     const data = (await this.loadData()) as
       (Partial<PluginData> & LegacyBoardState) | null;
+    const baseColumnTagPrefix =
+      data?.baseColumnTagPrefix ?? DEFAULT_PLUGIN_DATA.baseColumnTagPrefix;
     this.data = {
       baseQuery: data?.baseQuery ?? data?.query ?? migrateLegacyQuery(data),
+      taskFormat: resolveTaskFormatSetting(data?.taskFormat),
+      // Data files written before board types were explicit carry none, so the
+      // base board keeps the kind its tag prefix used to imply.
+      baseBoardType: resolveBoardType(data?.baseBoardType, baseColumnTagPrefix),
+      baseDateField: resolveDateField(data?.baseDateField),
+      baseDateColumns:
+        data?.baseDateColumns ?? DEFAULT_PLUGIN_DATA.baseDateColumns,
       baseCollapsedColumns:
         data?.baseCollapsedColumns ??
         data?.collapsedColumns ??
@@ -226,13 +286,14 @@ export default class TasksKanbanPlugin extends Plugin {
       baseCollapsedGroups:
         data?.baseCollapsedGroups ?? DEFAULT_PLUGIN_DATA.baseCollapsedGroups,
       baseColumns: data?.baseColumns ?? DEFAULT_PLUGIN_DATA.baseColumns,
-      baseColumnTagPrefix:
-        data?.baseColumnTagPrefix ?? DEFAULT_PLUGIN_DATA.baseColumnTagPrefix,
+      baseColumnTagPrefix,
       baseColumnOrder:
         data?.baseColumnOrder ?? DEFAULT_PLUGIN_DATA.baseColumnOrder,
       baseCardColors:
         data?.baseCardColors ?? DEFAULT_PLUGIN_DATA.baseCardColors,
       boardsFolder: data?.boardsFolder ?? DEFAULT_PLUGIN_DATA.boardsFolder,
+      weeklyPlannerFolder:
+        data?.weeklyPlannerFolder ?? DEFAULT_PLUGIN_DATA.weeklyPlannerFolder,
       // Read only so the one-time migration below can drain it.
       savedBoards:
         data?.savedBoards ??
@@ -253,11 +314,14 @@ export default class TasksKanbanPlugin extends Plugin {
 
     const repository = this.getBoardRepository();
     for (const saved of this.data.savedBoards) {
+      const columnTagPrefix = saved.columnTagPrefix ?? "";
       const board = {
         ...emptyBoardFile(saved.name || "Board"),
         query: saved.query ?? "",
+        // These boards predate explicit types, so the old implicit rule decides.
+        boardType: resolveBoardType(saved.boardType, columnTagPrefix),
         columns: saved.columns ?? [],
-        columnTagPrefix: saved.columnTagPrefix ?? "",
+        columnTagPrefix,
         columnOrder: saved.columnOrder ?? "",
         cardColors: saved.cardColors ?? "",
         collapsedColumns: saved.collapsedColumns ?? [],

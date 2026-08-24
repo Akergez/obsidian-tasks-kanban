@@ -1,4 +1,40 @@
+import { type DateField, DEFAULT_DATE_FIELD } from "../utils/dateFilter";
 import type { SortState } from "../utils/sortTasks";
+import {
+  type TaskFormatSetting,
+  DEFAULT_TASK_FORMAT_SETTING,
+} from "../utils/taskFormat";
+
+/**
+ * How a board partitions tasks into columns. Chosen explicitly per board — the
+ * type is never inferred from whether some other field happens to be filled in.
+ *
+ * - `status`: one column per status type, or a user-defined partition over
+ *   status symbols ({@link ColumnConfig}).
+ * - `tag`: one column per `#<prefix>_<column>` tag found on the tasks.
+ * - `date`: one column per configured calendar day ({@link DateColumnConfig}).
+ */
+export type BoardType = "status" | "tag" | "date";
+
+/** The board type a board gets when it does not say. */
+export const DEFAULT_BOARD_TYPE: BoardType = "status";
+
+/**
+ * Coerce a persisted board type.
+ *
+ * Boards written before board types were explicit carry no `boardType`; for
+ * those the old implicit rule still decides, so a board that had a column-tag
+ * prefix stays a tag board and everything else stays a status board.
+ */
+export function resolveBoardType(
+  raw: unknown,
+  columnTagPrefix: string,
+): BoardType {
+  if (raw === "status" || raw === "tag" || raw === "date") {
+    return raw;
+  }
+  return columnTagPrefix.trim() === "" ? DEFAULT_BOARD_TYPE : "tag";
+}
 
 /**
  * A user-defined column: a named partition over status symbols. The first symbol
@@ -16,18 +52,33 @@ export interface ColumnConfig {
 }
 
 /**
+ * A column of a date board: one exact calendar day. A task lands in it when its
+ * value for the board's date field is that day; dropping a card in writes that
+ * day into the task (see buildDateColumns in utils/dateColumns).
+ */
+export interface DateColumnConfig {
+  /** Stable identifier (crypto.randomUUID()); also the column-fold key. */
+  id: string;
+  /** Display name; empty ⇒ the date itself is shown. */
+  title: string;
+  /** The exact day this column collects, as `YYYY-MM-DD`. */
+  date: string;
+}
+
+/**
  * A single saved board: a named view. Its `query` holds only the view's own
  * lines (its slice; filters + sort + group); at render time that is merged on
  * top of the shared base query (see {@link PluginData.baseQuery}).
  *
- * `columns` (when non-empty) overrides the default status columns with custom
- * symbol columns; absent/empty means the default status columns are used.
- * `columnTagPrefix`, when set, wins over both: columns are then discovered from
- * the tasks' `#<prefix>_<column>` tags (see buildTagColumns in utils/tagColumns).
+ * This is the legacy in-data.json shape, kept only so old data files can be
+ * drained into `.kanban` files (see migrateSavedBoardsToFiles). It predates
+ * explicit board types, so `boardType` is absent and inferred on migration.
  */
 export interface SavedBoard {
   /** Stable identifier (crypto.randomUUID()), used to match open boards. */
   id: string;
+  /** Which kind of columns this board has; absent ⇒ inferred from the prefix. */
+  boardType?: BoardType;
   /** Display name, shown in the picker and on the board's tab. */
   name: string;
   /** Canonical query lines for this view's own slice (no base prefix). */
@@ -55,6 +106,17 @@ export interface SavedBoard {
 export interface PluginData {
   /** Shared query prefix applied to every board. */
   baseQuery: string;
+  /**
+   * How task metadata is written back to notes. `auto` reads the format from
+   * the Tasks plugin; the concrete values override it for this vault.
+   */
+  taskFormat: TaskFormatSetting;
+  /** Which kind of columns the base-only board has. */
+  baseBoardType: BoardType;
+  /** Date columns: the field the base-only board's columns are days of. */
+  baseDateField: DateField;
+  /** Date columns: the days the base-only board shows, in order. */
+  baseDateColumns: DateColumnConfig[];
   /** Folded columns for the base-only board. */
   baseCollapsedColumns: string[];
   /** Folded group keys for the base-only board. */
@@ -69,6 +131,8 @@ export interface PluginData {
   baseCardColors: string;
   /** Vault folder holding the `.kanban` board files; "" ⇒ the vault root. */
   boardsFolder: string;
+  /** Vault folder the weekly planner's boards live in; "" ⇒ the vault root. */
+  weeklyPlannerFolder: string;
   /**
    * Legacy in-data.json boards. Drained into `.kanban` files on first load
    * (see migrateSavedBoardsToFiles) and then always empty.
@@ -78,6 +142,10 @@ export interface PluginData {
 
 export const DEFAULT_PLUGIN_DATA: PluginData = {
   baseQuery: "",
+  taskFormat: DEFAULT_TASK_FORMAT_SETTING,
+  baseBoardType: DEFAULT_BOARD_TYPE,
+  baseDateField: DEFAULT_DATE_FIELD,
+  baseDateColumns: [],
   baseCollapsedColumns: [],
   baseCollapsedGroups: [],
   baseColumns: [],
@@ -85,6 +153,9 @@ export const DEFAULT_PLUGIN_DATA: PluginData = {
   baseColumnOrder: "",
   baseCardColors: "",
   boardsFolder: "Kanban",
+  // Nested inside the boards folder by default, so weekly boards also show up
+  // in the board picker and the settings pane.
+  weeklyPlannerFolder: "Kanban/Weekly",
   savedBoards: [],
 };
 
@@ -112,13 +183,19 @@ export interface LegacyBoardState {
 export interface BoardOwnState {
   /** This view's own query lines (without the base prefix). */
   query: string;
+  /** Which kind of columns this board has. Owned by settings, never written by a board. */
+  boardType: BoardType;
   /** Column IDs currently folded on this board. */
   collapsedColumns: string[];
   /** Group keys (swimlane keys) currently folded on this board. */
   collapsedGroups: string[];
   /** Custom columns; empty ⇒ default status columns. */
   columns: ColumnConfig[];
-  /** Tag-column prefix; "" ⇒ status columns. Owned by settings, never written by a board. */
+  /** Date columns: the field their days apply to. Owned by settings. */
+  dateField: DateField;
+  /** Date columns: the days shown, in order. Owned by settings. */
+  dateColumns: DateColumnConfig[];
+  /** Tag-column prefix; "" ⇒ no tag columns. Owned by settings, never written by a board. */
   columnTagPrefix: string;
   /** Tag-column order; "" ⇒ alphabetical. Owned by settings, never written by a board. */
   columnOrder: string;

@@ -1,19 +1,23 @@
 import type { StatusInfo } from "../services/TasksIntegration";
 import type { ColumnConfig } from "../types/persistence";
+import type { DateField } from "./dateFilter";
 
 /**
  * Configuration for a Kanban column at render time.
  *
- * A column partitions tasks one of two ways:
+ * A column partitions tasks one of three ways, matching the board's type:
  *
- * - *status mode* (`tagPrefix` absent): a task belongs to the column whose
- *   {@link symbols} include its status symbol. Default columns (see
- *   {@link buildColumns}) group every symbol of a status type together; custom
- *   columns (see {@link resolveColumns}) are user-defined symbol partitions.
+ * - *status mode* (neither `tagPrefix` nor `dateField` set): a task belongs to
+ *   the column whose {@link symbols} include its status symbol. Default columns
+ *   (see {@link buildColumns}) group every symbol of a status type together;
+ *   custom columns (see {@link resolveColumns}) are user-defined partitions.
  * - *tag mode* (`tagPrefix` set): a task belongs to the column whose {@link tag}
  *   it carries as `#<tagPrefix>_<tag>` (see buildTagColumns in tagColumns.ts).
+ * - *date mode* (`dateField` set): a task belongs to the column whose
+ *   {@link date} equals its value for that field (see buildDateColumns in
+ *   dateColumns.ts).
  *
- * Matching for both modes lives in columnCollects (tagColumns.ts).
+ * Matching for all three modes lives in columnCollects (columnMatch.ts).
  */
 export interface KanbanColumnConfig {
   id: string;
@@ -27,6 +31,10 @@ export interface KanbanColumnConfig {
   tagPrefix?: string;
   /** Tag mode: this column's part of the tag; "" marks the catch-all column. */
   tag?: string;
+  /** Date mode: the board's date field, written on drop. */
+  dateField?: DateField;
+  /** Date mode: the day this column collects; "" marks the catch-all column. */
+  date?: string;
 }
 
 /**

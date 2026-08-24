@@ -2,7 +2,7 @@ import type { Task } from "../services/TasksIntegration";
 import { TasksIntegration } from "../services/TasksIntegration";
 import { KanbanCard } from "./KanbanCard";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
-import { columnCollects } from "../utils/tagColumns";
+import { columnCollects } from "../utils/columnMatch";
 import { colorFor, type ColorRule } from "../utils/cardColors";
 import { taskKey, type SubTask } from "../utils/taskHierarchy";
 
@@ -210,6 +210,17 @@ export class KanbanColumn {
 
       if (!task || columnCollects(this.config, task)) {
         // Dropped into the column it already belongs to — no-op.
+        return;
+      }
+
+      if (this.config.dateField !== undefined) {
+        // Date columns: move the task by writing the column's day into the
+        // board's date field (the catch-all column, with no day, clears it).
+        void this.tasksIntegration.taskUpdater.updateTaskDate(
+          task,
+          this.config.dateField,
+          this.config.date === "" ? null : (this.config.date ?? null),
+        );
         return;
       }
 

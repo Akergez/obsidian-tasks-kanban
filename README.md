@@ -7,6 +7,8 @@ A Kanban board view plugin for Obsidian that displays Tasks in a visual board la
 ## Features
 
 - **Kanban Board View**: Display your tasks in a Kanban-style board with a column per status
+- **Three Board Types**: Pick per board whether its columns are statuses, tags, or dates
+- **Weekly Planner**: One ribbon click opens this week's board — a column per weekday, created once and reopened after that
 - **Boards Are Files**: Each board is a readable `.kanban` YAML file in your vault — click it to open, and it syncs and versions like any note
 - **Base Query**: A shared query merged into every board, so common filters live in one place
 - **Custom Columns**: Optionally replace the default status columns with your own, mapping each column to specific status symbols (e.g. split "In Progress" into "Ongoing" `/` and "In Review" `A`)
@@ -15,7 +17,7 @@ A Kanban board view plugin for Obsidian that displays Tasks in a visual board la
 - **Filtering**: Search bar for title and tags, plus full Tasks-style query editing
 - **Drag & Drop**: Move tasks between columns to change their status
 - **Tasks Integration**: Listens to Tasks plugin events for real-time updates
-- **Task Format Aware**: Writes done/cancelled dates in whichever format Tasks' own **Task Format** setting specifies — emoji (`✅ 2026-08-04`) or Dataview (`[completion:: 2026-08-04]`)
+- **Task Format Aware**: Writes dates in whichever format Tasks' own **Task Format** setting specifies — emoji (`✅ 2026-08-04`) or Dataview (`[completion:: 2026-08-04]`) — and lets you pin one in Settings
 - **Card Design**: The task text reads as the card's title, with tags and the parent note's name in the footer
 - **Nested Tasks**: Indented sub-tasks are listed inside the parent's card instead of getting cards of their own
 - **Card Colours**: Colour a card's left edge from rules written in the query syntax
@@ -39,20 +41,39 @@ From the command palette:
 - **Open board** — opens the base board (the shared base query, no file)
 - **Open board…** — pick one of your board files to open
 - **Create new board** — create a fresh `.kanban` file and open it
+- **Open weekly planner** — open this week's planner (also on the ribbon)
 
 Or just click a `.kanban` file in the file explorer.
 
 Each board opens in its own tab; opening a board that's already open focuses its tab.
 
+### Weekly planner
+
+The calendar button in the left ribbon opens **this week's planner**: a [date board](#date-columns) with one column per weekday, Monday through Sunday.
+
+The board is named after its ISO week (`2026-W35`), which is also its file name, so the week *is* its identity:
+
+- The first time you ask for a week, the file is created in the **Weekly planner folder** (Settings → Boards; default `Kanban/Weekly`, empty means the vault root).
+- Asking again later in the same week reopens that same board — your columns, folds and query are all still there. Nothing is regenerated or overwritten.
+- A new week has no file yet, so a fresh one is written.
+
+Weeks start on Monday. The planner's columns use the **scheduled** date; change the board's date field in Settings afterwards if you'd rather plan by due date — though that choice lives in the board file, so next week's planner starts on scheduled again.
+
+By default the folder sits inside the boards folder, so weekly boards also show up in *Open board…* and in Settings like any other board.
+
 ### Columns
 
-By default the board shows one column per status type (Todo, In Progress, Done, Cancelled), derived from your Tasks status configuration.
+Every board has a **board type**, chosen explicitly in Settings, that says what its columns are: **status columns**, **tag columns**, or **date columns**. Switching type keeps the other types' settings, so you can switch back without re-entering them.
 
-You can instead define **custom columns** per board in Settings. Each custom column is a partition over status symbols — pick which statuses it collects, and the first one becomes the symbol written when you drop a card into it. This lets you, for example, split "In Progress" into separate "Ongoing" (`/`) and "In Review" (`A`) columns.
+#### Status columns
+
+The default. One column per status type (Todo, In Progress, Done, Cancelled), derived from your Tasks status configuration.
+
+You can instead define **custom columns** per board. Each custom column is a partition over status symbols — pick which statuses it collects, and the first one becomes the symbol written when you drop a card into it. This lets you, for example, split "In Progress" into separate "Ongoing" (`/`) and "In Review" (`A`) columns.
 
 #### Tag columns
 
-Set a board's **column tag prefix** in Settings to build its columns from tags instead of statuses. With the prefix `sprint`, every distinct `#sprint_<column>` tag on your tasks becomes a column:
+Set a board's **column tag prefix** to build its columns from tags. With the prefix `sprint`, every distinct `#sprint_<column>` tag on your tasks becomes a column:
 
 ```markdown
 - [ ] Write the spec #sprint_todo
@@ -60,7 +81,7 @@ Set a board's **column tag prefix** in Settings to build its columns from tags i
 - [x] Ship it #sprint_done
 ```
 
-gives the columns *In progress*, *Todo* and *Done*, plus a leading **No column** for tasks carrying no `#sprint_…` tag. Dropping a card rewrites that tag in the source file — the task's `[ ]` status is left alone. Clearing the prefix returns the board to status columns.
+gives the columns *In progress*, *Todo* and *Done*, plus a leading **No column** for tasks carrying no `#sprint_…` tag. Dropping a card rewrites that tag in the source file — the task's `[ ]` status is left alone.
 
 By default the columns are ordered alphabetically. Set **Column order** to arrange them yourself — a comma-separated list of column names (the part after the prefix), leftmost first:
 
@@ -70,12 +91,44 @@ todo, doing, done
 
 Anything not listed follows alphabetically, so a new tag still shows up somewhere predictable. A listed column appears even when no task carries its tag yet, which is how you keep an empty column on the board to drop cards into.
 
+#### Date columns
+
+A date board has one column per day you name. Pick the **date field** the columns apply to — created, start, scheduled (the default), due, done or cancelled — then add a column for each day:
+
+| Column name | Date         |
+| ----------- | ------------ |
+| Monday      | `2026-08-24` |
+| Tuesday     | `2026-08-25` |
+| Wednesday   | `2026-08-26` |
+
+A task lands in the column whose day matches its value for that field. Leaving a column's name empty labels it with the date itself. Columns stay in the order you add them — they are not re-sorted by date.
+
+There is always a leading **No date** column for tasks with no date in that field.
+
+Two rules make a date board a deliberately narrow view:
+
+- **A task whose date matches no column is hidden.** That is the point — a week board shows that week, not everything ever scheduled. Use it together with the query to control what reaches the board at all.
+- **Dropping a card writes that column's day into the field**, in your Task Format (see below). Dropping into **No date** removes the date. The `[ ]` status is left alone.
+
+Dates are exact days (`YYYY-MM-DD`), so a date board is a snapshot of named days rather than a rolling window.
+
+#### Task format
+
+Dragging a card onto a date column writes a date into your note. **Settings → Tasks integration → Task format** decides how:
+
+- **Follow the Tasks plugin** (default) — read Tasks' own **Task Format** setting
+- **Emoji** — `⏳ 2026-08-24`, `📅 2026-08-24`, …
+- **Dataview** — `[scheduled:: 2026-08-24]`, `[due:: 2026-08-24]`, …
+
+The same setting governs the done/cancelled dates written on a status change. A date written in the *other* format is never touched: Tasks would not have read it as a date either, so it counts as your own text.
+
 ### Boards are files
 
 Each board is a `.kanban` file in your vault. Click it in the file explorer and the board opens — it syncs, versions and moves like any other note. The file is YAML, so it stays readable and hand-editable:
 
 ```yaml
 name: Sprint
+boardType: tag
 columnTagPrefix: sprint
 columnOrder: todo, doing, done
 
@@ -92,7 +145,26 @@ collapsedColumns: []
 collapsedGroups: []
 ```
 
-Everything about a board lives in its file, including which columns and swimlanes you have folded.
+A date board carries its field and days instead:
+
+```yaml
+name: This week
+boardType: date
+dateField: scheduled
+
+dateColumns:
+  - id: 8f1c…
+    title: Monday
+    date: "2026-08-24"
+  - id: 2a70…
+    title: Tuesday
+    date: "2026-08-25"
+
+collapsedColumns: []
+collapsedGroups: []
+```
+
+Everything about a board lives in its file, including which columns and swimlanes you have folded. Boards written before board types were explicit have no `boardType:` key; they keep the type their column-tag prefix used to imply, and gain the key the next time they are saved.
 
 Boards are still configured in **Settings**, which lists every board file and writes your edits back to it on Save. The **Boards folder** setting says where new boards are created and which folder is listed (default `Kanban`; empty means the vault root).
 

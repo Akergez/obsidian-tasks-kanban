@@ -70,12 +70,17 @@ obsidian-tasks-kanban/
 │   │   └── boardFile.ts             # .kanban YAML board format (serialize/parse)
 │   ├── utils/
 │   │   ├── statusColumns.ts         # Default + custom column resolution
+│   │   ├── tagColumns.ts            # Tag-derived columns + tag rewriting
+│   │   ├── dateColumns.ts           # Day columns for a date board
+│   │   ├── weeklyBoard.ts           # ISO weeks + the weekly planner's board
+│   │   ├── columnMatch.ts           # columnCollects: the one column↔task matcher
+│   │   ├── taskFormat.ts            # Emoji/Dataview date field syntax + writing
 │   │   ├── groupTasks.ts            # Swimlane grouping
 │   │   ├── sortTasks.ts             # Sorting
 │   │   ├── searchFilter.ts          # Tag/title helpers
 │   │   └── taskChips.ts             # Card metadata chips
 │   ├── settings/
-│   │   └── SettingsTab.ts           # Base board + board files + columns editor
+│   │   └── SettingsTab.ts           # Task format + base board + board files + columns editor
 │   └── types/
 │       └── persistence.ts           # Persisted data model
 ├── styles.css                      # Board styles
@@ -109,14 +114,29 @@ The plugin integrates with the [Tasks](https://github.com/obsidian-tasks-group/o
 - **Visual Feedback**: CSS classes for dragging/drop states
 - **Status Update**: On drop, updates task status in source file → Tasks detects change → auto-refresh
 
-### Kanban Columns
+### Board Types and Columns
 
-A board's columns come from one of two sources, resolved in `KanbanBoard.renderLanes`:
+A board's `boardType` (`status` | `tag` | `date`, in `types/persistence.ts`) is an **explicit** setting, never inferred from which other field happens to be filled in. `KanbanBoard.resolveColumnConfigs` switches on it:
 
 - **Status columns** (`utils/statusColumns.ts`) — the default. One column per status type, or a user-defined partition over status symbols. A drop writes the column's `dropSymbol`.
-- **Tag columns** (`utils/tagColumns.ts`) — used when the board has a `columnTagPrefix`. Columns are discovered from the tasks' `#<prefix>_<column>` tags: those named in the board's `columnOrder` come first in that order, the rest follow alphabetically, and a catch-all for untagged tasks leads. A drop rewrites the tag via `TaskUpdater.updateTaskColumnTag` and leaves the status alone.
+- **Tag columns** (`utils/tagColumns.ts`) — columns are discovered from the tasks' `#<prefix>_<column>` tags: those named in the board's `columnOrder` come first in that order, the rest follow alphabetically, and a catch-all for untagged tasks leads. A drop rewrites the tag via `TaskUpdater.updateTaskColumnTag` and leaves the status alone. With no prefix set yet there is nothing to discover from, so the board falls back to status columns.
+- **Date columns** (`utils/dateColumns.ts`) — one column per configured exact day (`YYYY-MM-DD`) on one `dateField`, led by a "No date" catch-all. Unlike tag columns these are *configured, not discovered*, which is what makes a task dated outside every column **hidden**. A drop writes that day via `TaskUpdater.updateTaskDate` (the catch-all clears the field) and leaves the status alone.
 
-`columnCollects` (in `tagColumns.ts`) is the single matcher for both modes; `KanbanLane` and `KanbanColumn`'s drop handler go through it.
+`columnCollects` (in `utils/columnMatch.ts`) is the single matcher for all three modes; `KanbanLane` and `KanbanColumn`'s drop handler go through it, so distribution and drops can't disagree.
+
+`resolveBoardType` handles boards written before types were explicit: no `boardType` key means the old implicit rule applies (a `columnTagPrefix` ⇒ tag board, otherwise status).
+
+### Weekly Planner
+
+The ribbon's calendar button calls `TasksKanbanPlugin.openWeeklyPlanner`. `utils/weeklyBoard.ts` is pure: `startOfWeek` (Monday-based, unlike the Sunday-based `in this week` query filter, which follows Tasks), `isoWeekName` (`2026-W35`, decided by the week's Thursday) and `buildWeeklyBoard`, whose column ids are derived from the day so the document is a pure function of the week.
+
+The week name is the file name, so identity is positional, not stored: `BoardRepository.ensure` writes the file only when it is absent, which is what makes reopening mid-week return the board with its edits rather than a regenerated one. The folder comes from `weeklyPlannerFolder`, nested under `boardsFolder` by default so weekly boards still appear in the picker.
+
+### Writing Dates
+
+`utils/taskFormat.ts` owns the syntax of every Tasks date field in both formats, and `setDateField` is the one writer: it strips existing occurrences **written in the active format only** (a foreign-format token is the user's own text) and appends the new one before any trailing `^block-id`.
+
+Which format is active comes from `TasksIntegration.getWriteSettings()`: the Tasks plugin's own `taskFormat`, overridden by this plugin's `taskFormat` setting unless that is `auto`.
 
 ### Nested Tasks
 

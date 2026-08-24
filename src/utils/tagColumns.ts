@@ -44,7 +44,7 @@ export function columnPart(tag: string, prefix: string): string | null {
 }
 
 /** The column parts a task carries for `prefix`, normalised and deduplicated. */
-function columnPartsOf(task: Task, prefix: string): string[] {
+export function columnPartsOf(task: Task, prefix: string): string[] {
   const parts: string[] = [];
   for (const tag of task.tags ?? []) {
     const part = columnPart(normalizeTag(tag), prefix);
@@ -139,25 +139,6 @@ export function buildTagColumns(
   }
 
   return columns;
-}
-
-/**
- * Whether `column` collects `task`. Status columns match on the task's status
- * symbol; tag columns match on the task's column tag, with the catch-all
- * (`tag === ""`) taking every task that has none.
- */
-export function columnCollects(
-  column: KanbanColumnConfig,
-  task: Task,
-): boolean {
-  if (column.tagPrefix === undefined) {
-    return column.symbols.includes(task.status.symbol);
-  }
-  const parts = columnPartsOf(task, column.tagPrefix);
-  if (column.tag === "") {
-    return parts.length === 0;
-  }
-  return parts.includes(column.tag ?? "");
 }
 
 /**

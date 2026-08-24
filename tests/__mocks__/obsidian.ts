@@ -23,6 +23,16 @@ export class TFolder {}
 export abstract class TextFileView extends ItemView {}
 export function setTooltip() {}
 
+/** Obsidian's normalizePath: forward slashes, no repeats, no leading/trailing. */
+export function normalizePath(path: string): string {
+  return path
+    .replace(/\\/g, "/")
+    .replace(/\/{2,}/g, "/")
+    .replace(/^\/+|\/+$/g, "")
+    .trim()
+    .normalize("NFC");
+}
+
 // Obsidian's YAML helpers are backed by the same library the app uses, so tests
 // exercise real parsing rather than a hand-rolled approximation.
 export function parseYaml(input: string): unknown {

@@ -944,6 +944,106 @@ describe("TaskUpdater", () => {
     });
   });
 
+  describe("updateTaskDate", () => {
+    beforeEach(() => {
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockTasksIntegration.getWriteSettings.mockResolvedValue({
+        setDoneDate: true,
+        setCancelledDate: true,
+        taskFormat: "tasksPluginEmoji",
+      });
+    });
+
+    it("writes the day without touching the status symbol", async () => {
+      const task = createTask("/", 1);
+      mockApp.vault.read.mockResolvedValue(
+        "# Notes\n- [/] Test task\n- [ ] Other",
+      );
+
+      const result = await taskUpdater.updateTaskDate(
+        task,
+        "scheduledDate",
+        "2026-08-24",
+      );
+
+      expect(result).toBe(true);
+      expect(mockApp.vault.modify).toHaveBeenCalledWith(
+        mockFile,
+        "# Notes\n- [/] Test task ⏳ 2026-08-24\n- [ ] Other",
+      );
+    });
+
+    it("replaces the day a task already had", async () => {
+      const task = createTask(" ", 0);
+      mockApp.vault.read.mockResolvedValue("- [ ] Test task ⏳ 2026-01-01");
+
+      const result = await taskUpdater.updateTaskDate(
+        task,
+        "scheduledDate",
+        "2026-08-24",
+      );
+
+      expect(result).toBe(true);
+      expect(mockApp.vault.modify).toHaveBeenCalledWith(
+        mockFile,
+        "- [ ] Test task ⏳ 2026-08-24",
+      );
+    });
+
+    it("clears the field when dropped into the no-date column", async () => {
+      const task = createTask(" ", 0);
+      mockApp.vault.read.mockResolvedValue("- [ ] Test task ⏳ 2026-01-01");
+
+      const result = await taskUpdater.updateTaskDate(
+        task,
+        "scheduledDate",
+        null,
+      );
+
+      expect(result).toBe(true);
+      expect(mockApp.vault.modify).toHaveBeenCalledWith(
+        mockFile,
+        "- [ ] Test task",
+      );
+    });
+
+    it("writes dataview syntax when that is the resolved format", async () => {
+      mockTasksIntegration.getWriteSettings.mockResolvedValue({
+        setDoneDate: true,
+        setCancelledDate: true,
+        taskFormat: "dataview",
+      });
+      const task = createTask(" ", 0);
+      mockApp.vault.read.mockResolvedValue("- [ ] Test task");
+
+      const result = await taskUpdater.updateTaskDate(
+        task,
+        "dueDate",
+        "2026-08-24",
+      );
+
+      expect(result).toBe(true);
+      expect(mockApp.vault.modify).toHaveBeenCalledWith(
+        mockFile,
+        "- [ ] Test task  [due:: 2026-08-24]",
+      );
+    });
+
+    it("returns false without writing when the file is missing", async () => {
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
+      const task = createTask(" ", 0);
+
+      const result = await taskUpdater.updateTaskDate(
+        task,
+        "dueDate",
+        "2026-08-24",
+      );
+
+      expect(result).toBe(false);
+      expect(mockApp.vault.modify).not.toHaveBeenCalled();
+    });
+  });
+
   describe("updateTaskColumnTag", () => {
     beforeEach(() => {
       mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);

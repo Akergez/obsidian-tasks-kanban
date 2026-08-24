@@ -20,9 +20,20 @@ vi.mock("obsidian", () => ({
   TFile: class {},
   TFolder: class {},
   setTooltip: vi.fn(),
+  normalizePath: (path: string) => normalizePathImpl(path),
   parseYaml: (input: string) => parseYamlImpl(input),
   stringifyYaml: (value: unknown) => stringifyYamlImpl(value),
 }));
+
+/** Obsidian's normalizePath: forward slashes, no repeats, no leading/trailing. */
+function normalizePathImpl(path: string): string {
+  return path
+    .replace(/\\/g, "/")
+    .replace(/\/{2,}/g, "/")
+    .replace(/^\/+|\/+$/g, "")
+    .trim()
+    .normalize("NFC");
+}
 
 // Apply polyfills directly to the prototype so every element gets them.
 const proto = HTMLElement.prototype as Record<string, unknown>;
