@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-tasks-kanban",
+  "name": "obsidian-tasks-kanban-tags",
   "version": "0.10.3",
   "description": "Kanban board view for Obsidian Tasks",
   "main": "main.js",
@@ -7,7 +7,7 @@
     "dev": "esbuild src/main.ts --bundle --outfile=main.js --format=cjs --platform=browser --target=es2020 --external:obsidian --watch",
     "build": "esbuild src/main.ts --bundle --outfile=main.js --format=cjs --platform=browser --target=es2020 --external:obsidian --minify",
     "build:dev": "esbuild src/main.ts --bundle --outfile=main.js --format=cjs --platform=browser --target=es2020 --external:obsidian",
-    "dev:reload": "obsidian plugin:reload id=tasks-kanban",
+    "dev:reload": "obsidian plugin:reload id=tasks-kanban-tags",
     "dev:full": "npm run build:dev && npm run dev:reload",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -16,8 +16,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"tests/**/*.ts\"",
     "prepare": "husky",
-    "postbuild": "mkdir -p test-vault/.obsidian/plugins/tasks-kanban && ln -sf $(pwd)/main.js test-vault/.obsidian/plugins/tasks-kanban/main.js",
-    "symlink": "ln -sf $(pwd)/main.js test-vault/.obsidian/plugins/tasks-kanban/main.js"
+    "postbuild": "mkdir -p test-vault/.obsidian/plugins/tasks-kanban-tags && ln -sf $(pwd)/main.js test-vault/.obsidian/plugins/tasks-kanban-tags/main.js",
+    "symlink": "ln -sf $(pwd)/main.js test-vault/.obsidian/plugins/tasks-kanban-tags/main.js"
   },
   "keywords": [
     "obsidian",

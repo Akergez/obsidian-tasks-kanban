@@ -20,17 +20,12 @@ A Kanban board view plugin for Obsidian that displays Tasks in a visual board la
 
 ## Installation
 
-### From the Community Plugins listing (recommended)
+This is a fork of [Tasks Kanban](https://github.com/Djiit/obsidian-tasks-kanban) that adds tag-based columns. It ships under its own plugin id (`tasks-kanban-tags`), so it can be installed alongside the original, and it is not in the Community Plugins listing — install it manually.
 
 1. Install the [Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks) plugin from Obsidian Community Plugins
-2. Open **Settings → Community plugins → Browse**, search for **Tasks Kanban**, and click **Install** — or install directly from the [Community listing page](https://community.obsidian.md/plugins/tasks-kanban)
-3. Enable both plugins in Obsidian Settings
-
-### Manual installation
-
-1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/Djiit/obsidian-tasks-kanban/releases/latest)
-2. Copy them into your vault's `.obsidian/plugins/tasks-kanban/` folder
-3. Reload Obsidian and enable both the Tasks and Tasks Kanban plugins in Settings
+2. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/Akergez/obsidian-tasks-kanban/releases/latest)
+3. Copy them into your vault's `.obsidian/plugins/tasks-kanban-tags/` folder
+4. Reload Obsidian and enable both the Tasks and Tasks Kanban Tags plugins in Settings
 
 ## Usage
 
@@ -138,14 +133,14 @@ Use the [Obsidian CLI](https://help.obsidian.md/cli) for faster development:
 
 | Command | Action |
 |---------|--------|
-| `obsidian plugin:reload id=obsidian-tasks-kanban` | Reload plugin without restarting Obsidian |
+| `obsidian plugin:reload id=tasks-kanban-tags` | Reload plugin without restarting Obsidian |
 | `obsidian dev:errors` | Check for plugin errors |
 | `obsidian dev:console level=error` | View console errors |
 | `obsidian dev:screenshot path=screenshot.png` | Capture current view |
 | `obsidian dev:dom selector=".workspace-leaf"` | Inspect DOM elements |
 | `obsidian dev:css selector=".workspace-leaf" prop=background-color` | Check CSS values |
 | `obsidian dev:mobile on` | Enable mobile emulation |
-| `obsidian eval code="app.plugins.getPlugin('obsidian-tasks-kanban')"` | Access plugin instance |
+| `obsidian eval code="app.plugins.getPlugin('tasks-kanban-tags')"` | Access plugin instance |
 
 ### Quick Development Cycle
 
