@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.13.0...0.14.0) (2026-08-24)
+
+
+### Features
+
+* file filter ([b2933bc](https://github.com/Akergez/obsidian-tasks-kanban/commit/b2933bc8e43484b967cb2e517b57fd3b00534560))
+
 ## [0.13.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.12.0...0.13.0) (2026-08-24)
 
 
