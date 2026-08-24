@@ -227,12 +227,7 @@ describe("parseQuery", () => {
     });
 
     it("flags valid-but-unsupported Tasks instructions", () => {
-      for (const line of [
-        "path includes Projects",
-        "priority is high",
-        "done",
-        "status.type is TODO",
-      ]) {
+      for (const line of ["path includes Projects", "priority is high"]) {
         const { query, errors } = parseQuery(line);
         expect(query.filters).toEqual([]);
         expect(errors).toHaveLength(1);
@@ -462,6 +457,82 @@ describe("applyBoardQuery", () => {
     ];
     const { query } = parseQuery("description includes WRITE");
     expect(ids(applyBoardQuery(tasks, query))).toEqual(["a"]);
+  });
+
+  describe("status filters", () => {
+    const board = () => [
+      createTask({
+        id: "todo",
+        status: { symbol: " ", name: "Todo", type: "TODO" },
+      }),
+      createTask({
+        id: "doing",
+        status: { symbol: "/", name: "In Progress", type: "IN_PROGRESS" },
+      }),
+      createTask({
+        id: "done",
+        status: { symbol: "x", name: "Done", type: "DONE" },
+      }),
+      createTask({
+        id: "cancelled",
+        status: { symbol: "-", name: "Cancelled", type: "CANCELLED" },
+      }),
+    ];
+
+    it('drops done and cancelled tasks on "not done"', () => {
+      const { query } = parseQuery("not done");
+      expect(ids(applyBoardQuery(board(), query))).toEqual(["todo", "doing"]);
+    });
+
+    it('keeps only done and cancelled tasks on "done"', () => {
+      const { query } = parseQuery("done");
+      expect(ids(applyBoardQuery(board(), query))).toEqual([
+        "done",
+        "cancelled",
+      ]);
+    });
+
+    it("filters by status.type", () => {
+      const { query } = parseQuery("status.type is not DONE");
+      expect(ids(applyBoardQuery(board(), query))).toEqual([
+        "todo",
+        "doing",
+        "cancelled",
+      ]);
+    });
+
+    it("ANDs status filters with each other and with tag filters", () => {
+      const tasks = [
+        createTask({
+          id: "keep",
+          tags: ["work"],
+          status: { symbol: " ", name: "Todo", type: "TODO" },
+        }),
+        createTask({
+          id: "wrongTag",
+          tags: ["home"],
+          status: { symbol: " ", name: "Todo", type: "TODO" },
+        }),
+        createTask({
+          id: "wrongStatus",
+          tags: ["work"],
+          status: { symbol: "x", name: "Done", type: "DONE" },
+        }),
+      ];
+      const { query } = parseQuery("tag includes #work\nnot done");
+      expect(ids(applyBoardQuery(tasks, query))).toEqual(["keep"]);
+    });
+
+    it("still parses `done` as a date field when an operator follows", () => {
+      const { query, errors } = parseQuery("done before 2026-01-01");
+      expect(errors).toEqual([]);
+      expect(query.filters[0].kind).toBe("date");
+    });
+
+    it("round-trips status filters through serializeQuery", () => {
+      const source = "not done\nstatus.type is not NON_TASK";
+      expect(serializeQuery(parseQuery(source).query)).toBe(source);
+    });
   });
 
   it("sorts filtered results, sinking missing values", () => {

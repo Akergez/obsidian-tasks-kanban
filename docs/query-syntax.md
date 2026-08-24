@@ -12,6 +12,17 @@ Each instruction should be on its own line. Blank lines are ignored.
 |-------------|-------------|---------|
 | `tag includes #<tag>` | Show tasks with the specified tag | `tag includes #work` |
 | `description includes <text>` | Show tasks whose description contains the text (case-insensitive) | `description includes write tests` |
+| `done` | Show tasks whose status type is `DONE`, `CANCELLED` or `NON_TASK` | `done` |
+| `not done` | Show tasks whose status type is `TODO`, `IN_PROGRESS` or `ON_HOLD` | `not done` |
+| `status.type (is\|is not) <TYPE>` | Filter by status type | `status.type is not NON_TASK` |
+| `status.name (includes\|does not include) <text>` | Case-insensitive substring match on the status name | `status.name includes progress` |
+| `status.name (regex matches\|regex does not match) /<pattern>/` | Regex match on the status name (case-sensitive unless the `i` flag is given) | `status.name regex matches /^In/i` |
+
+#### Status Types
+
+`TODO`, `DONE`, `IN_PROGRESS`, `ON_HOLD`, `CANCELLED`, `NON_TASK` — matched case-insensitively, so `status.type is in_progress` works too.
+
+Note that `done` covers cancelled tasks as well, matching the Tasks reference; `not done` is its exact complement. To hide finished work from a board, add `not done` to its query (or to the base query, to apply it everywhere).
 
 ### Sorting
 
@@ -116,8 +127,8 @@ The following Tasks query instructions are **not** supported and will be reporte
 - `scheduled on` / `scheduled before` / `scheduled after`
 - `start on` / `start before` / `start after`
 - `created on` / `created before` / `created after`
-- `done` / `not done`
 - `recurring` / `not recurring`
+- `status.symbol` filters (Tasks has no built-in one either)
 - `group by <date field>` (e.g. `group by due`) — date grouping scatters the board; only `status`, `priority`, `tags`, `path`, `folder`, `filename` are supported
 - `group by function` (arbitrary JavaScript)
 - `limit`

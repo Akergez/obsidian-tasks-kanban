@@ -18,6 +18,12 @@ import {
   serializeDateFilter,
   type DateFilterInstruction,
 } from "../utils/dateFilter";
+import {
+  parseStatusFilter,
+  matchesStatusFilter,
+  serializeStatusFilter,
+  type StatusFilterInstruction,
+} from "../utils/statusFilter";
 
 /**
  * The canonical, line-based query that drives a board's filtering and sorting.
@@ -32,6 +38,10 @@ import {
  *   tag includes #<tag>
  *   tag not includes #<tag>
  *   description includes <text>
+ *   done | not done
+ *   status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>
+ *   status.name (includes|does not include) <text>
+ *   status.name (regex matches|regex does not match) /<pattern>/
  *   <date-field> <operator> <value>  (e.g., starts before tomorrow, due after 2026-07-10)
  *   sort by <due|scheduled|start|created|priority> [reverse]
  *   group by <status|priority|due|…|tags|folder|filename> [reverse]
@@ -59,7 +69,8 @@ export interface BoardQuery {
 export type FilterInstruction =
   | { kind: "tag"; value: string; negated?: boolean }
   | { kind: "description"; value: string }
-  | DateFilterInstruction;
+  | DateFilterInstruction
+  | StatusFilterInstruction;
 
 /** An empty query: no filters, no sorting, no grouping. */
 export const EMPTY_QUERY: BoardQuery = {
@@ -114,7 +125,7 @@ const GROUP_FIELD_TO_KEYWORD: Partial<Record<GroupField, string>> = {
 
 /** One-line summary of the supported syntax, used in error messages. */
 const SUPPORTED_SYNTAX =
-  "supported: tag includes #<tag>, tag not includes #<tag>, description includes <text>, <date-field> <operator> <value> (e.g., starts before tomorrow), sort by <due|scheduled|start|created|priority> [reverse], group by <status|priority|tags|path|folder|filename> [reverse]";
+  "supported: tag includes #<tag>, tag not includes #<tag>, description includes <text>, done, not done, status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>, status.name (includes|does not include) <text>, status.name (regex matches|regex does not match) /<pattern>/, <date-field> <operator> <value> (e.g., starts before tomorrow), sort by <due|scheduled|start|created|priority> [reverse], group by <status|priority|tags|path|folder|filename> [reverse]";
 
 /**
  * Parse a multi-line query string into a {@link BoardQuery}. One instruction per
@@ -192,6 +203,15 @@ function parseLine(line: string): {
     return { group: { field, direction } };
   }
 
+  // Status filters run before the date parser: `done` is also a date keyword
+  // (`done before 2026-01-01`), and parseStatusFilter only claims the bare word.
+  const statusFilter = parseStatusFilter(line);
+  if (statusFilter) {
+    return "error" in statusFilter
+      ? { error: statusFilter.error }
+      : { filter: statusFilter.filter };
+  }
+
   // Try to parse as a date filter first (before tag filters)
   const dateFilter = parseDateFilter(line);
   if (dateFilter) {
@@ -261,6 +281,8 @@ function serializeFilter(filter: FilterInstruction): string {
       return `description includes ${filter.value}`;
     case "date":
       return serializeDateFilter(filter);
+    case "status":
+      return serializeStatusFilter(filter);
   }
 }
 
@@ -350,6 +372,10 @@ function filterTasks(tasks: Task[], filters: FilterInstruction[]): Task[] {
     (f): f is DateFilterInstruction => f.kind === "date",
   );
 
+  const statusFilters = filters.filter(
+    (f): f is StatusFilterInstruction => f.kind === "status",
+  );
+
   return tasks.filter((task) => {
     const taskTags = (task.tags ?? []).map(normalizeTag);
 
@@ -371,6 +397,13 @@ function filterTasks(tasks: Task[], filters: FilterInstruction[]): Task[] {
     const description = task.description.toLowerCase();
     if (!descriptions.every((text) => description.includes(text))) {
       return false;
+    }
+
+    // Status filters: AND'd — all must match, as in Tasks.
+    for (const statusFilter of statusFilters) {
+      if (!matchesStatusFilter(task, statusFilter)) {
+        return false;
+      }
     }
 
     // Date filters: AND'd — all must match
