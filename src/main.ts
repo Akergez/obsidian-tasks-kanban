@@ -1,11 +1,12 @@
-import { Plugin, type WorkspaceLeaf, Notice } from "obsidian";
+import { Plugin, TFile, type WorkspaceLeaf, Notice } from "obsidian";
 
-import { TasksBoardView } from "./views/TasksBoardView";
+import { TasksBoardView, BOARD_VIEW_TYPE } from "./views/TasksBoardView";
 import { TasksIntegration, type StatusInfo } from "./services/TasksIntegration";
 import { TasksKanbanSettingsTab } from "./settings/SettingsTab";
 import { BoardPickerModal } from "./components/BoardPickerModal";
+import { BoardRepository, type BoardEntry } from "./services/BoardRepository";
+import { BOARD_EXTENSION, emptyBoardFile } from "./query/boardFile";
 import {
-  BASE_BOARD_ID,
   DEFAULT_PLUGIN_DATA,
   type BoardOwnState,
   type BoardStatePersistence,
@@ -13,23 +14,16 @@ import {
   type PluginData,
 } from "./types/persistence";
 import {
-  createSavedBoard,
-  findSavedBoard,
-  upsertSavedBoard,
-} from "./query/savedBoards";
-import {
   EMPTY_QUERY,
   serializeQuery,
   withSort,
   withTags,
 } from "./query/boardQuery";
 
-const VIEW_TYPE = "tasks-board";
-
 /**
  * The slice of {@link PluginData} the settings tab owns and commits as a unit.
- * Everything else (fold state, per-board queries edited on the board itself) is
- * written by the boards through their {@link BoardStatePersistence}.
+ * Saved boards are no longer part of it — they are `.kanban` files, edited
+ * through {@link BoardRepository}.
  */
 export type SettingsSlice = Pick<
   PluginData,
@@ -38,7 +32,7 @@ export type SettingsSlice = Pick<
   | "baseColumnTagPrefix"
   | "baseColumnOrder"
   | "baseCardColors"
-  | "savedBoards"
+  | "boardsFolder"
 >;
 
 /**
@@ -59,8 +53,9 @@ function migrateLegacyQuery(data: LegacyBoardState | null): string {
 export default class TasksKanbanPlugin extends Plugin {
   private tasksIntegration: TasksIntegration | null = null;
   private data: PluginData = DEFAULT_PLUGIN_DATA;
+  private boards: BoardRepository | null = null;
 
-  /** The base query string and saved boards, for the settings tab. */
+  /** The base query and base board settings, for the settings tab. */
   getPluginData(): PluginData {
     return this.data;
   }
@@ -70,81 +65,47 @@ export default class TasksKanbanPlugin extends Plugin {
     return this.tasksIntegration?.getStatuses() ?? [];
   }
 
-  /** The list of openable boards: the base board plus each saved board. */
+  /** The board files in the vault, for the picker and the settings tab. */
+  getBoardRepository(): BoardRepository {
+    if (!this.boards) {
+      this.boards = new BoardRepository(this.app, () => this.data.boardsFolder);
+    }
+    return this.boards;
+  }
+
+  /** The openable boards: the base board plus every board file. */
   getBoards(): { id: string; name: string }[] {
     return [
-      { id: BASE_BOARD_ID, name: "Board" },
-      ...this.data.savedBoards.map((b) => ({ id: b.id, name: b.name })),
+      { id: "", name: "Board (base)" },
+      ...this.getBoardRepository()
+        .list()
+        .map((b: BoardEntry) => ({ id: b.path, name: b.name })),
     ];
   }
 
-  /** Display name for a board id (falls back to "Board" for unknown ids). */
-  getBoardName(id: string): string {
-    if (id === BASE_BOARD_ID) {
-      return "Board";
-    }
-    return findSavedBoard(this.data.savedBoards, id)?.name ?? "Board";
-  }
-
   /**
-   * Build a persistence accessor scoped to a single board. Reads/writes the base
-   * record when `id === BASE_BOARD_ID`, otherwise the matching saved board. The
-   * base prefix is always exposed via getBaseQuery and never written from a board.
+   * Persistence for the base board — the one view that is not backed by a file.
+   * Board files are owned by their view (a TextFileView).
    */
-  createPersistence(id: string): BoardStatePersistence {
-    const getBaseQuery = () => this.data.baseQuery;
-    if (id === BASE_BOARD_ID) {
-      return {
-        getBaseQuery,
-        get: () => ({
-          query: this.data.baseQuery,
-          collapsedColumns: this.data.baseCollapsedColumns,
-          collapsedGroups: this.data.baseCollapsedGroups,
-          columns: this.data.baseColumns,
-          columnTagPrefix: this.data.baseColumnTagPrefix,
-          columnOrder: this.data.baseColumnOrder,
-          cardColors: this.data.baseCardColors,
-        }),
-        save: (state: BoardOwnState) => {
-          this.data = {
-            ...this.data,
-            baseQuery: state.query,
-            baseCollapsedColumns: state.collapsedColumns,
-            baseCollapsedGroups: state.collapsedGroups,
-            baseColumns: state.columns,
-          };
-          return this.saveData(this.data);
-        },
-      };
-    }
+  baseBoardPersistence(): BoardStatePersistence {
     return {
-      getBaseQuery,
-      get: () => {
-        const saved = findSavedBoard(this.data.savedBoards, id);
-        return {
-          query: saved?.query ?? "",
-          collapsedColumns: saved?.collapsedColumns ?? [],
-          collapsedGroups: saved?.collapsedGroups ?? [],
-          columns: saved?.columns ?? [],
-          columnTagPrefix: saved?.columnTagPrefix ?? "",
-          columnOrder: saved?.columnOrder ?? "",
-          cardColors: saved?.cardColors ?? "",
-        };
-      },
+      getBaseQuery: () => this.data.baseQuery,
+      get: () => ({
+        query: this.data.baseQuery,
+        collapsedColumns: this.data.baseCollapsedColumns,
+        collapsedGroups: this.data.baseCollapsedGroups,
+        columns: this.data.baseColumns,
+        columnTagPrefix: this.data.baseColumnTagPrefix,
+        columnOrder: this.data.baseColumnOrder,
+        cardColors: this.data.baseCardColors,
+      }),
       save: (state: BoardOwnState) => {
-        const saved = findSavedBoard(this.data.savedBoards, id);
-        if (!saved) {
-          return;
-        }
         this.data = {
           ...this.data,
-          savedBoards: upsertSavedBoard(this.data.savedBoards, {
-            ...saved,
-            query: state.query,
-            collapsedColumns: state.collapsedColumns,
-            collapsedGroups: state.collapsedGroups,
-            columns: state.columns,
-          }),
+          baseQuery: state.query,
+          baseCollapsedColumns: state.collapsedColumns,
+          baseCollapsedGroups: state.collapsedGroups,
+          baseColumns: state.columns,
         };
         return this.saveData(this.data);
       },
@@ -152,42 +113,33 @@ export default class TasksKanbanPlugin extends Plugin {
   }
 
   /**
-   * Persist the settings-owned slice of the plugin data (from the settings tab),
-   * then refresh open boards and close any whose saved board was deleted.
+   * Persist the settings-owned slice of the plugin data, then refresh open
+   * boards so a base-query or folder change takes effect immediately.
    */
   async saveSettings(settings: SettingsSlice) {
-    const { savedBoards } = settings;
     this.data = { ...this.data, ...settings };
     await this.saveData(this.data);
 
-    const validIds = new Set([BASE_BOARD_ID, ...savedBoards.map((b) => b.id)]);
-    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+    this.refreshOpenBoards();
+  }
+
+  /** Re-read every open board, after something outside the view changed it. */
+  refreshOpenBoards(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(BOARD_VIEW_TYPE)) {
       const view = leaf.view;
-      if (!(view instanceof TasksBoardView)) {
-        continue;
-      }
-      if (!validIds.has(view.getQueryId())) {
-        leaf.detach();
-      } else {
+      if (view instanceof TasksBoardView) {
         view.refresh();
       }
     }
   }
 
   /**
-   * Create a fresh blank saved board, persist it, and open it — a scratch view
-   * the user can customize via the bars/modal, then rename or delete in
-   * settings. Returns the new board's id.
+   * Create a fresh board file and open it. Returns the new file's path.
    */
   async createAndOpenBlankBoard(): Promise<string> {
-    const board = createSavedBoard("Untitled board");
-    this.data = {
-      ...this.data,
-      savedBoards: upsertSavedBoard(this.data.savedBoards, board),
-    };
-    await this.saveData(this.data);
-    await this.activateView(board.id);
-    return board.id;
+    const path = await this.getBoardRepository().create("Untitled board");
+    await this.openBoard(path);
+    return path;
   }
 
   async onload() {
@@ -206,32 +158,40 @@ export default class TasksKanbanPlugin extends Plugin {
     this.addSettingTab(new TasksKanbanSettingsTab(this.app, this));
 
     const tasksIntegration = this.tasksIntegration;
-    this.registerView(VIEW_TYPE, (leaf: WorkspaceLeaf) => {
+    this.registerView(BOARD_VIEW_TYPE, (leaf: WorkspaceLeaf) => {
       return new TasksBoardView(leaf, tasksIntegration, {
-        createPersistence: (id) => this.createPersistence(id),
-        getBoardName: (id) => this.getBoardName(id),
+        getBaseQuery: () => this.data.baseQuery,
+        baseBoardPersistence: () => this.baseBoardPersistence(),
       });
     });
+
+    // Clicking a .kanban file in the file explorer opens the board view.
+    this.registerExtensions([BOARD_EXTENSION], BOARD_VIEW_TYPE);
+
+    // Board files written before this version lived inside data.json.
+    await this.migrateSavedBoardsToFiles();
 
     this.addCommand({
       id: "open-board",
       name: "Open board",
-      callback: () => this.activateView(),
+      callback: () => {
+        void this.openBaseBoard();
+      },
     });
 
     this.addCommand({
       id: "open-saved-query",
-      name: "Open saved query…",
+      name: "Open board…",
       callback: () => {
         new BoardPickerModal(this.app, this.getBoards(), (id) => {
-          void this.activateView(id);
+          void (id === "" ? this.openBaseBoard() : this.openBoard(id));
         }).open();
       },
     });
 
     this.addCommand({
       id: "open-blank-board",
-      name: "Open new blank board",
+      name: "Create new board",
       callback: () => {
         void this.createAndOpenBlankBoard();
       },
@@ -272,8 +232,8 @@ export default class TasksKanbanPlugin extends Plugin {
         data?.baseColumnOrder ?? DEFAULT_PLUGIN_DATA.baseColumnOrder,
       baseCardColors:
         data?.baseCardColors ?? DEFAULT_PLUGIN_DATA.baseCardColors,
-      // `savedQueries` is the pre-rename key; same element shape, so read it as
-      // a fallback to migrate existing data files to `savedBoards`.
+      boardsFolder: data?.boardsFolder ?? DEFAULT_PLUGIN_DATA.boardsFolder,
+      // Read only so the one-time migration below can drain it.
       savedBoards:
         data?.savedBoards ??
         data?.savedQueries ??
@@ -282,26 +242,74 @@ export default class TasksKanbanPlugin extends Plugin {
   }
 
   /**
-   * Open the board for `id`, or focus it if already open (one board per id).
+   * One-time migration: boards used to live as entries in data.json. Write each
+   * one out as a `.kanban` file, then clear the list so this never runs twice.
+   * A board whose file already exists is skipped rather than overwritten.
    */
-  async activateView(id: string = BASE_BOARD_ID) {
+  private async migrateSavedBoardsToFiles(): Promise<void> {
+    if (this.data.savedBoards.length === 0) {
+      return;
+    }
+
+    const repository = this.getBoardRepository();
+    for (const saved of this.data.savedBoards) {
+      const board = {
+        ...emptyBoardFile(saved.name || "Board"),
+        query: saved.query ?? "",
+        columns: saved.columns ?? [],
+        columnTagPrefix: saved.columnTagPrefix ?? "",
+        columnOrder: saved.columnOrder ?? "",
+        cardColors: saved.cardColors ?? "",
+        collapsedColumns: saved.collapsedColumns ?? [],
+        collapsedGroups: saved.collapsedGroups ?? [],
+      };
+      const path = await repository.create(board.name);
+      await repository.write(path, board);
+    }
+
+    const count = this.data.savedBoards.length;
+    this.data = { ...this.data, savedBoards: [] };
+    await this.saveData(this.data);
+    new Notice(
+      `Tasks Kanban: moved ${count} board${count === 1 ? "" : "s"} into ${
+        this.data.boardsFolder || "the vault root"
+      }.`,
+    );
+  }
+
+  /** Open a board file, focusing it if it is already open. */
+  async openBoard(path: string): Promise<void> {
     const existing = this.app.workspace
-      .getLeavesOfType(VIEW_TYPE)
+      .getLeavesOfType(BOARD_VIEW_TYPE)
       .find(
         (leaf) =>
-          leaf.view instanceof TasksBoardView && leaf.view.getQueryId() === id,
+          leaf.view instanceof TasksBoardView && leaf.view.file?.path === path,
       );
     if (existing) {
       this.app.workspace.setActiveLeaf(existing);
       return;
     }
 
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      new Notice(`Tasks Kanban: no board at ${path}`);
+      return;
+    }
+    await this.app.workspace.getLeaf(true).openFile(file);
+  }
+
+  /** Open the base board — the fileless view driven by the base query. */
+  async openBaseBoard(): Promise<void> {
+    const existing = this.app.workspace
+      .getLeavesOfType(BOARD_VIEW_TYPE)
+      .find((leaf) => leaf.view instanceof TasksBoardView && !leaf.view.file);
+    if (existing) {
+      this.app.workspace.setActiveLeaf(existing);
+      return;
+    }
+
     const leaf = this.app.workspace.getLeaf(true);
-    await leaf.setViewState({
-      type: VIEW_TYPE,
-      state: { queryId: id },
-      active: true,
-    });
+    await leaf.setViewState({ type: BOARD_VIEW_TYPE, active: true });
     this.app.workspace.setActiveLeaf(leaf);
   }
 }

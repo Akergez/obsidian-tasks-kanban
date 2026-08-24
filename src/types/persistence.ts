@@ -67,12 +67,14 @@ export interface PluginData {
   baseColumnOrder: string;
   /** Card-spine colour rules for the base-only board; "" ⇒ none. */
   baseCardColors: string;
-  /** User-managed saved boards (views). */
+  /** Vault folder holding the `.kanban` board files; "" ⇒ the vault root. */
+  boardsFolder: string;
+  /**
+   * Legacy in-data.json boards. Drained into `.kanban` files on first load
+   * (see migrateSavedBoardsToFiles) and then always empty.
+   */
   savedBoards: SavedBoard[];
 }
-
-/** Reserved id for the base-only board (the default view). */
-export const BASE_BOARD_ID = "__base__";
 
 export const DEFAULT_PLUGIN_DATA: PluginData = {
   baseQuery: "",
@@ -82,6 +84,7 @@ export const DEFAULT_PLUGIN_DATA: PluginData = {
   baseColumnTagPrefix: "",
   baseColumnOrder: "",
   baseCardColors: "",
+  boardsFolder: "Kanban",
   savedBoards: [],
 };
 

@@ -1,9 +1,16 @@
 import { vi } from "vitest";
+import { parse as parseYamlImpl, stringify as stringifyYamlImpl } from "yaml";
 
-// Mock Obsidian API
+// Mock Obsidian API.
+// This factory — not tests/__mocks__/obsidian.ts — is what tests actually get:
+// it overrides the module alias. Keep the two in step when adding an export.
+//
+// parseYaml/stringifyYaml delegate to the real `yaml` package rather than a
+// stub, so the board-file format is exercised against a genuine YAML parser.
 vi.mock("obsidian", () => ({
   Plugin: class {},
   ItemView: class {},
+  TextFileView: class {},
   WorkspaceLeaf: class {},
   Notice: class {},
   App: class {},
@@ -11,7 +18,10 @@ vi.mock("obsidian", () => ({
   Workspace: class {},
   MetadataCache: class {},
   TFile: class {},
+  TFolder: class {},
   setTooltip: vi.fn(),
+  parseYaml: (input: string) => parseYamlImpl(input),
+  stringifyYaml: (value: unknown) => stringifyYamlImpl(value),
 }));
 
 // Apply polyfills directly to the prototype so every element gets them.

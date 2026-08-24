@@ -1,39 +1,51 @@
-import { ItemView, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { TextFileView, type WorkspaceLeaf } from "obsidian";
 
 import { TasksIntegration, type Task } from "../services/TasksIntegration";
 import { KanbanBoard } from "../components/KanbanBoard";
 import {
-  BASE_BOARD_ID,
-  type BoardStatePersistence,
+  emptyBoardFile,
+  parseBoardFile,
+  serializeBoardFile,
+  type BoardFile,
+} from "../query/boardFile";
+import { boardNameFromPath } from "../services/BoardRepository";
+import type {
+  BoardOwnState,
+  BoardStatePersistence,
 } from "../types/persistence";
 
+export const BOARD_VIEW_TYPE = "tasks-board";
+
 /**
- * The slice of the plugin a board view needs to resolve its identity into a
- * persistence accessor and a display name. Kept narrow to avoid a circular
+ * The slice of the plugin a board view needs, kept narrow to avoid a circular
  * dependency on the plugin's concrete class.
  */
 export interface BoardHost {
-  createPersistence(id: string): BoardStatePersistence;
-  getBoardName(id: string): string;
-}
-
-interface BoardViewState {
-  queryId?: string;
+  /** The shared base query merged into every board. */
+  getBaseQuery(): string;
+  /** Persistence for the base board — the one view that is not a file. */
+  baseBoardPersistence(): BoardStatePersistence;
 }
 
 /**
- * The Kanban board view for displaying Tasks. Each instance is bound to a board
- * id (the base board or a saved query) carried in its view state, so it survives
- * reload and can be matched by {@link TasksKanbanPlugin.activateView}.
+ * The Kanban board view.
+ *
+ * A saved board *is* a `.kanban` file: this is a {@link TextFileView}, so
+ * Obsidian opens it when the file is clicked and owns reading and writing the
+ * bytes. The view keeps the parsed board in memory and hands the KanbanBoard a
+ * synchronous {@link BoardStatePersistence} over it, so nothing downstream had
+ * to learn about files.
+ *
+ * Opened without a file (the "Open board" command) it shows the base board,
+ * whose settings live in the plugin's data.json instead.
  */
-export class TasksBoardView extends ItemView {
+export class TasksBoardView extends TextFileView {
   private tasksIntegration: TasksIntegration;
   private host: BoardHost;
   private kanbanBoard: KanbanBoard | null = null;
   private unsubscribe: (() => void) | null = null;
-  private queryId: string = BASE_BOARD_ID;
-  /** Persistence that reads the live queryId, so it stays correct even though
-   * Obsidian runs onOpen (which builds the board) before setState sets the id. */
+  /** The parsed board backing a file-based view; null for the base board. */
+  private board: BoardFile | null = null;
   private readonly persistence: BoardStatePersistence;
 
   constructor(
@@ -45,90 +57,120 @@ export class TasksBoardView extends ItemView {
     this.tasksIntegration = tasksIntegration;
     this.host = host;
     this.persistence = {
-      get: () => this.host.createPersistence(this.queryId).get(),
-      getBaseQuery: () =>
-        this.host.createPersistence(this.queryId).getBaseQuery(),
-      save: (state) => this.host.createPersistence(this.queryId).save(state),
+      getBaseQuery: () => this.host.getBaseQuery(),
+      get: () => this.readState(),
+      save: (state) => this.writeState(state),
     };
   }
 
   getViewType(): string {
-    return "tasks-board";
-  }
-
-  /** The board id this view is bound to. */
-  getQueryId(): string {
-    return this.queryId;
-  }
-
-  getDisplayText(): string {
-    return this.host.getBoardName(this.queryId);
+    return BOARD_VIEW_TYPE;
   }
 
   getIcon(): string {
     return "columns";
   }
 
-  getState(): Record<string, unknown> {
-    return { ...super.getState(), queryId: this.queryId };
+  getDisplayText(): string {
+    if (this.file) {
+      return this.board?.name || boardNameFromPath(this.file.path);
+    }
+    return "Board";
   }
 
-  async setState(
-    state: BoardViewState,
-    result: ViewStateResult,
-  ): Promise<void> {
-    const changed = !!state?.queryId && state.queryId !== this.queryId;
-    if (state?.queryId) {
-      this.queryId = state.queryId;
+  /** The board's own slice, read out of whichever backing this view has. */
+  private readState(): BoardOwnState {
+    if (!this.board) {
+      return this.host.baseBoardPersistence().get();
     }
-    await super.setState(state, result);
-    // Obsidian runs onOpen (which builds the board) BEFORE setState supplies the
-    // id, so the board was hydrated against the default base query. Now that the
-    // real id is known, reload the board's query from persistence.
-    if (changed && this.kanbanBoard) {
-      this.kanbanBoard.reloadQueryFromPersistence();
+    return {
+      query: this.board.query,
+      collapsedColumns: this.board.collapsedColumns,
+      collapsedGroups: this.board.collapsedGroups,
+      columns: this.board.columns,
+      columnTagPrefix: this.board.columnTagPrefix,
+      columnOrder: this.board.columnOrder,
+      cardColors: this.board.cardColors,
+    };
+  }
+
+  /**
+   * Persist the board's own slice. For a file-backed board this only updates
+   * the in-memory document and asks Obsidian to save — folds therefore land in
+   * the YAML alongside everything else, which is why a fold is a file write.
+   */
+  private writeState(state: BoardOwnState): void {
+    if (!this.board) {
+      void this.host.baseBoardPersistence().save(state);
+      return;
     }
+    this.board = {
+      ...this.board,
+      query: state.query,
+      collapsedColumns: state.collapsedColumns,
+      collapsedGroups: state.collapsedGroups,
+      columns: state.columns,
+      columnTagPrefix: state.columnTagPrefix,
+      columnOrder: state.columnOrder,
+      cardColors: state.cardColors,
+    };
+    this.requestSave();
+  }
+
+  // --- TextFileView contract ---
+
+  getViewData(): string {
+    return this.board ? serializeBoardFile(this.board) : this.data;
+  }
+
+  setViewData(data: string, clear: boolean): void {
+    const fallback = this.file ? boardNameFromPath(this.file.path) : "Board";
+    this.board = parseBoardFile(data, fallback).board;
+
+    if (clear) {
+      this.kanbanBoard?.reloadQueryFromPersistence();
+    }
+    // A file opened into an already-built board (Obsidian reuses leaves) must
+    // pick up the new document rather than keep the previous board's query.
+    this.kanbanBoard?.reloadQueryFromPersistence();
+    this.refresh();
+  }
+
+  clear(): void {
+    this.board = emptyBoardFile("Board");
   }
 
   async onOpen() {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.addClass("tasks-kanban-view");
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("tasks-kanban-view");
 
     // Load the vault's status configuration so columns reflect it
     // (also picks up status-config changes whenever the board is reopened).
     await this.tasksIntegration.loadStatuses();
 
-    // Create the Kanban board. The persistence reads the live queryId, so even
-    // though onOpen runs before setState supplies it, a later reload picks up
-    // the correct query (see setState).
     this.kanbanBoard = new KanbanBoard(
-      containerEl,
+      contentEl,
       this.app,
       this.tasksIntegration,
       this.persistence,
     );
 
-    // Subscribe to tasks updates
     this.unsubscribe = this.tasksIntegration.subscribe((tasks: Task[]) => {
       this.kanbanBoard?.updateTasks(tasks);
     });
 
-    // Initial render
     this.kanbanBoard.render();
   }
 
   async onClose() {
-    const { containerEl } = this;
-    containerEl.empty();
+    this.contentEl.empty();
 
-    // Clean up subscription
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = null;
     }
 
-    // Clean up Kanban board
     if (this.kanbanBoard) {
       this.kanbanBoard.destroy();
       this.kanbanBoard = null;
@@ -136,13 +178,12 @@ export class TasksBoardView extends ItemView {
   }
 
   /**
-   * Refresh the view with current tasks and query
+   * Refresh the view with current tasks and query.
    */
   refresh() {
     if (this.kanbanBoard) {
       this.kanbanBoard.reloadQueryFromPersistence();
-      const tasks = this.tasksIntegration.getTasks();
-      this.kanbanBoard.updateTasks(tasks);
+      this.kanbanBoard.updateTasks(this.tasksIntegration.getTasks());
     }
   }
 }

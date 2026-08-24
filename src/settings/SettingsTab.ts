@@ -8,8 +8,9 @@ import {
 
 import { parseQuery } from "../query/boardQuery";
 import { parseColorRules } from "../utils/cardColors";
-import { createSavedBoard } from "../query/savedBoards";
-import type { ColumnConfig, SavedBoard } from "../types/persistence";
+import type { ColumnConfig } from "../types/persistence";
+import { BOARD_EXTENSION, type BoardFile } from "../query/boardFile";
+import type { BoardEntry } from "../services/BoardRepository";
 import type { StatusInfo } from "../services/TasksIntegration";
 import type TasksKanbanPlugin from "../main";
 import type { SettingsSlice } from "../main";
@@ -58,9 +59,10 @@ function newColumnId(): string {
 /**
  * Settings tab for the Tasks Kanban plugin.
  *
- * Edits the shared base query + columns plus a list of saved boards (each with
- * its own query and columns). All edits are kept in working copies and committed
- * together via Save; the Save button is disabled while any query has parse errors.
+ * Edits the shared base board plus every `.kanban` board file in the vault.
+ * All edits are kept in working copies and committed together via Save, which
+ * writes the base slice to data.json and each board back to its own file; the
+ * Save button is disabled while any query or colour rule has parse errors.
  */
 export class TasksKanbanSettingsTab extends PluginSettingTab {
   private plugin: TasksKanbanPlugin;
@@ -71,7 +73,11 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
   private baseColumnTagPrefix = "";
   private baseColumnOrder = "";
   private baseCardColors = "";
-  private savedBoards: SavedBoard[] = [];
+  /** Board files loaded from disk, edited in place and written back on Save. */
+  private boards: { path: string; board: BoardFile }[] = [];
+  private boardsFolder = "";
+  /** Paths deleted in the pane, removed from disk on Save. */
+  private deletedBoards: string[] = [];
 
   // Parse-error state, keyed by field ("base" or a saved-board id).
   private errors = new Map<string, string[]>();
@@ -131,56 +137,18 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       },
       {
         type: "group",
-        heading: "Saved boards",
-        items: data.savedBoards.flatMap((board) => [
+        heading: "Boards",
+        items: [
           {
-            name: board.name,
-            desc: "Board name",
+            name: "Boards folder",
+            desc: `Vault folder holding the .${BOARD_EXTENSION} board files. Empty: the vault root.`,
             control: {
               type: "text",
-              key: `savedBoardName-${board.id}`,
+              key: "boardsFolder",
+              placeholder: "Kanban",
             },
           },
-          {
-            name: "Query",
-            desc: "One instruction per line. This query is merged with the base query.",
-            aliases: board.query
-              ? board.query.split("\n").filter((l) => l.trim())
-              : [],
-            control: {
-              type: "textarea",
-              key: `savedBoardQuery-${board.id}`,
-              placeholder: QUERY_PLACEHOLDER,
-            },
-          },
-          {
-            name: "Column tag prefix",
-            desc: TAG_PREFIX_DESC,
-            control: {
-              type: "text",
-              key: `savedBoardTagPrefix-${board.id}`,
-              placeholder: "sprint",
-            },
-          },
-          {
-            name: "Column order",
-            desc: COLUMN_ORDER_DESC,
-            control: {
-              type: "text",
-              key: `savedBoardColumnOrder-${board.id}`,
-              placeholder: "todo, doing, done",
-            },
-          },
-          {
-            name: "Card colours",
-            desc: CARD_COLORS_DESC,
-            control: {
-              type: "textarea",
-              key: `savedBoardCardColors-${board.id}`,
-              placeholder: CARD_COLORS_PLACEHOLDER,
-            },
-          },
-        ]),
+        ],
       },
     ];
   }
@@ -202,30 +170,8 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     if (key === "baseCardColors") {
       return data.baseCardColors;
     }
-    if (key.startsWith("savedBoardName-")) {
-      const boardId = key.replace("savedBoardName-", "");
-      const board = data.savedBoards.find((b) => b.id === boardId);
-      return board?.name ?? "";
-    }
-    if (key.startsWith("savedBoardQuery-")) {
-      const boardId = key.replace("savedBoardQuery-", "");
-      const board = data.savedBoards.find((b) => b.id === boardId);
-      return board?.query ?? "";
-    }
-    if (key.startsWith("savedBoardTagPrefix-")) {
-      const boardId = key.replace("savedBoardTagPrefix-", "");
-      const board = data.savedBoards.find((b) => b.id === boardId);
-      return board?.columnTagPrefix ?? "";
-    }
-    if (key.startsWith("savedBoardColumnOrder-")) {
-      const boardId = key.replace("savedBoardColumnOrder-", "");
-      const board = data.savedBoards.find((b) => b.id === boardId);
-      return board?.columnOrder ?? "";
-    }
-    if (key.startsWith("savedBoardCardColors-")) {
-      const boardId = key.replace("savedBoardCardColors-", "");
-      const board = data.savedBoards.find((b) => b.id === boardId);
-      return board?.cardColors ?? "";
+    if (key === "boardsFolder") {
+      return data.boardsFolder;
     }
     return undefined;
   }
@@ -241,18 +187,9 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
         baseColumnTagPrefix: data.baseColumnTagPrefix,
         baseColumnOrder: data.baseColumnOrder,
         baseCardColors: data.baseCardColors,
-        savedBoards: data.savedBoards,
+        boardsFolder: data.boardsFolder,
         ...patch,
       });
-    /** Apply `change` to the saved board `key` addresses, keeping the rest. */
-    const patchBoard = (
-      prefix: string,
-      change: (board: SavedBoard) => SavedBoard,
-    ) => {
-      const boardId = key.replace(prefix, "");
-      return data.savedBoards.map((b) => (b.id === boardId ? change(b) : b));
-    };
-
     if (key === "baseQuery") {
       await commit({ baseQuery: value as string });
       return;
@@ -277,49 +214,8 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       await commit({ baseCardColors: value as string });
       return;
     }
-    if (key.startsWith("savedBoardName-")) {
-      await commit({
-        savedBoards: patchBoard("savedBoardName-", (b) => ({
-          ...b,
-          name: value as string,
-        })),
-      });
-      return;
-    }
-    if (key.startsWith("savedBoardQuery-")) {
-      await commit({
-        savedBoards: patchBoard("savedBoardQuery-", (b) => ({
-          ...b,
-          query: value as string,
-        })),
-      });
-      return;
-    }
-    if (key.startsWith("savedBoardTagPrefix-")) {
-      await commit({
-        savedBoards: patchBoard("savedBoardTagPrefix-", (b) => ({
-          ...b,
-          columnTagPrefix: value as string,
-        })),
-      });
-      return;
-    }
-    if (key.startsWith("savedBoardColumnOrder-")) {
-      await commit({
-        savedBoards: patchBoard("savedBoardColumnOrder-", (b) => ({
-          ...b,
-          columnOrder: value as string,
-        })),
-      });
-      return;
-    }
-    if (key.startsWith("savedBoardCardColors-")) {
-      await commit({
-        savedBoards: patchBoard("savedBoardCardColors-", (b) => ({
-          ...b,
-          cardColors: value as string,
-        })),
-      });
+    if (key === "boardsFolder") {
+      await commit({ boardsFolder: (value as string).trim() });
       return;
     }
   }
@@ -335,15 +231,31 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     this.baseColumnTagPrefix = data.baseColumnTagPrefix;
     this.baseColumnOrder = data.baseColumnOrder;
     this.baseCardColors = data.baseCardColors;
-    this.savedBoards = data.savedBoards.map((b) => ({
-      ...b,
-      columns: (b.columns ?? []).map((c) => ({
-        ...c,
-        symbols: [...c.symbols],
-      })),
-    }));
+    this.boardsFolder = data.boardsFolder;
+    this.boards = [];
+    this.deletedBoards = [];
     this.errors.clear();
 
+    this.render();
+    // Board files are read from the vault, so the boards section fills in a
+    // moment later; the base-board section above is usable immediately.
+    void this.loadBoards();
+  }
+
+  /** Read every board file into a working copy, then redraw the pane. */
+  private async loadBoards(): Promise<void> {
+    const repository = this.plugin.getBoardRepository();
+    const entries: BoardEntry[] = repository.list();
+    const loaded: { path: string; board: BoardFile }[] = [];
+
+    for (const entry of entries) {
+      const result = await repository.read(entry.path);
+      if (result) {
+        loaded.push({ path: entry.path, board: result.board });
+      }
+    }
+
+    this.boards = loaded;
     this.render();
   }
 
@@ -387,16 +299,34 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       });
     }
 
-    new Setting(containerEl).setName("Saved boards").setHeading();
+    new Setting(containerEl).setName("Boards").setHeading();
 
-    for (const board of this.savedBoards) {
-      this.renderSavedBoard(containerEl, board);
+    containerEl.createEl("p", {
+      cls: "tasks-kanban-settings-help",
+      text: `Each board is a .${BOARD_EXTENSION} file in your vault — open one by clicking it in the file explorer. Edits here are written back to the file on Save.`,
+    });
+
+    new Setting(containerEl)
+      .setName("Boards folder")
+      .setDesc(
+        "Vault folder new boards are created in and existing ones are listed from. Empty: the vault root.",
+      )
+      .addText((text) => {
+        text
+          .setPlaceholder("Kanban")
+          .setValue(this.boardsFolder)
+          .onChange((value) => {
+            this.boardsFolder = value.trim();
+          });
+      });
+
+    for (const entry of this.boards) {
+      this.renderBoardFile(containerEl, entry);
     }
 
     new Setting(containerEl).addButton((button) => {
-      button.setButtonText("Add saved board").onClick(() => {
-        this.savedBoards.push(createSavedBoard("New board"));
-        this.render();
+      button.setButtonText("Add board").onClick(() => {
+        void this.addBoard();
       });
     });
 
@@ -413,10 +343,19 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     saveSetting.settingEl.addClass("tasks-kanban-settings-save");
   }
 
-  /** Render a saved board's name, query, columns, and delete button. */
-  private renderSavedBoard(containerEl: HTMLElement, board: SavedBoard): void {
+  /**
+   * Render one board file: its name, query, columns and colour rules, plus a
+   * delete button. Edits land in the working copy; Save writes the file.
+   */
+  private renderBoardFile(
+    containerEl: HTMLElement,
+    entry: { path: string; board: BoardFile },
+  ): void {
+    const { board, path } = entry;
+
     new Setting(containerEl)
       .setName("Name")
+      .setDesc(path)
       .addText((text) => {
         text.setValue(board.name).onChange((value) => {
           board.name = value;
@@ -425,22 +364,22 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       .addExtraButton((button) => {
         button
           .setIcon("trash")
-          .setTooltip("Delete saved board")
+          .setTooltip("Delete this board file")
           .onClick(() => {
-            this.savedBoards = this.savedBoards.filter(
-              (b) => b.id !== board.id,
-            );
-            this.errors.delete(board.id);
+            this.deletedBoards.push(path);
+            this.boards = this.boards.filter((b) => b.path !== path);
+            this.errors.delete(path);
+            this.errors.delete(`${path}-colors`);
             this.render();
           });
       });
 
-    this.renderQueryField(containerEl, board.id, board.query, (value) => {
+    this.renderQueryField(containerEl, path, board.query, (value) => {
       board.query = value;
     });
     this.renderTagColumnsSection(
       containerEl,
-      { prefix: board.columnTagPrefix ?? "", order: board.columnOrder ?? "" },
+      { prefix: board.columnTagPrefix, order: board.columnOrder },
       (value) => {
         board.columnTagPrefix = value;
       },
@@ -450,17 +389,27 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     );
     this.renderCardColorsField(
       containerEl,
-      `${board.id}-colors`,
-      board.cardColors ?? "",
+      `${path}-colors`,
+      board.cardColors,
       (value) => {
         board.cardColors = value;
       },
     );
     if (!board.columnTagPrefix) {
-      this.renderColumnsSection(containerEl, board.columns ?? [], (next) => {
+      this.renderColumnsSection(containerEl, board.columns, (next) => {
         board.columns = next;
       });
     }
+  }
+
+  /** Create a new board file on disk, then reload the pane's list. */
+  private async addBoard(): Promise<void> {
+    await this.plugin.saveSettings({
+      ...this.plugin.getPluginData(),
+      boardsFolder: this.boardsFolder,
+    });
+    await this.plugin.getBoardRepository().create("New board");
+    await this.loadBoards();
   }
 
   /**
@@ -790,11 +739,24 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       baseColumnTagPrefix: this.baseColumnTagPrefix,
       baseColumnOrder: this.baseColumnOrder,
       baseCardColors: this.baseCardColors,
-      savedBoards: this.savedBoards.map((b) => ({
-        ...b,
-        columns: clean(b.columns),
-      })),
+      boardsFolder: this.boardsFolder,
     });
+
+    // Boards live in the vault, so they are written file by file. Deletions are
+    // applied first, so a board removed and re-added in one sitting can't have
+    // its new file trashed by the pending delete.
+    const repository = this.plugin.getBoardRepository();
+    for (const path of this.deletedBoards) {
+      await repository.delete(path);
+    }
+    this.deletedBoards = [];
+
+    for (const { path, board } of this.boards) {
+      await repository.write(path, { ...board, columns: clean(board.columns) });
+    }
+
+    // An open board reads its own file, so make it re-read after we rewrote it.
+    this.plugin.refreshOpenBoards();
   }
 }
 

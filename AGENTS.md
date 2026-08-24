@@ -51,9 +51,10 @@ obsidian-tasks-kanban/
 │   ├── main.ts                      # Plugin entry point, commands, persistence
 │   ├── services/
 │   │   ├── TasksIntegration.ts      # Integration with Tasks plugin + statuses
+│   │   ├── BoardRepository.ts       # Read/write the vault's .kanban board files
 │   │   └── TaskUpdater.ts           # Update task status in source files
 │   ├── views/
-│   │   └── TasksBoardView.ts        # Kanban view (one per board id)
+│   │   └── TasksBoardView.ts        # Kanban view (a TextFileView over a .kanban file)
 │   ├── components/
 │   │   ├── KanbanBoard.ts           # Board logic (query, grouping, columns)
 │   │   ├── KanbanLane.ts            # Swimlane (one per group)
@@ -66,7 +67,7 @@ obsidian-tasks-kanban/
 │   │   └── BoardPickerModal.ts      # Saved-board picker
 │   ├── query/
 │   │   ├── boardQuery.ts            # Query parse/serialize/apply (filters+sort+group)
-│   │   └── savedBoards.ts           # Saved-board list helpers
+│   │   └── boardFile.ts             # .kanban YAML board format (serialize/parse)
 │   ├── utils/
 │   │   ├── statusColumns.ts         # Default + custom column resolution
 │   │   ├── groupTasks.ts            # Swimlane grouping
@@ -74,7 +75,7 @@ obsidian-tasks-kanban/
 │   │   ├── searchFilter.ts          # Tag/title helpers
 │   │   └── taskChips.ts             # Card metadata chips
 │   ├── settings/
-│   │   └── SettingsTab.ts           # Base query + saved boards + columns editor
+│   │   └── SettingsTab.ts           # Base board + board files + columns editor
 │   └── types/
 │       └── persistence.ts           # Persisted data model
 ├── styles.css                      # Board styles
@@ -84,6 +85,14 @@ obsidian-tasks-kanban/
 ```
 
 ## Architecture Notes
+
+### Board Storage
+
+A board is a `.kanban` file in the vault, holding YAML (see `query/boardFile.ts` for the format, which is hand-serialized so multi-line fields come out as block scalars, and parsed via Obsidian's `parseYaml`). `main.ts` calls `registerExtensions` so clicking the file opens the board.
+
+`TasksBoardView` is a **TextFileView**: Obsidian owns reading/writing the bytes, and the view holds the parsed board in memory, exposing it to `KanbanBoard` through the existing synchronous `BoardStatePersistence`. Nothing below the view knows about files. Opened with no file, the same view shows the base board, whose settings stay in `data.json`.
+
+`services/BoardRepository.ts` lists, reads, writes and deletes board files for the settings pane and the picker — the boards that aren't open. Boards that used to live in `data.json` are migrated to files once, on load.
 
 ### Tasks Integration
 

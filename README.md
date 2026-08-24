@@ -7,7 +7,7 @@ A Kanban board view plugin for Obsidian that displays Tasks in a visual board la
 ## Features
 
 - **Kanban Board View**: Display your tasks in a Kanban-style board with a column per status
-- **Multiple Saved Boards**: Define several named boards, each with its own query and columns; open each in its own tab
+- **Boards Are Files**: Each board is a readable `.kanban` YAML file in your vault — click it to open, and it syncs and versions like any note
 - **Base Query**: A shared query merged into every board, so common filters live in one place
 - **Custom Columns**: Optionally replace the default status columns with your own, mapping each column to specific status symbols (e.g. split "In Progress" into "Ongoing" `/` and "In Review" `A`)
 - **Grouping (Swimlanes)**: Group cards into foldable lanes by status, priority, tags, path, folder, or filename
@@ -36,9 +36,11 @@ This is a fork of [Tasks Kanban](https://github.com/Djiit/obsidian-tasks-kanban)
 
 From the command palette:
 
-- **Open board** — opens the default board
-- **Open saved query…** — pick one of your saved boards to open
-- **Open new blank board** — create a fresh board and start customizing it
+- **Open board** — opens the base board (the shared base query, no file)
+- **Open board…** — pick one of your board files to open
+- **Create new board** — create a fresh `.kanban` file and open it
+
+Or just click a `.kanban` file in the file explorer.
 
 Each board opens in its own tab; opening a board that's already open focuses its tab.
 
@@ -68,14 +70,35 @@ todo, doing, done
 
 Anything not listed follows alphabetically, so a new tag still shows up somewhere predictable. A listed column appears even when no task carries its tag yet, which is how you keep an empty column on the board to drop cards into.
 
-### Saved boards and the base query
+### Boards are files
 
-A board's view is defined by a **query** (filters + sort + grouping) and its **columns**. In Settings you can:
+Each board is a `.kanban` file in your vault. Click it in the file explorer and the board opens — it syncs, versions and moves like any other note. The file is YAML, so it stays readable and hand-editable:
 
-- Edit the **base query**, merged on top of every board
-- Add, rename, and delete **saved boards**, each with its own query and columns
+```yaml
+name: Sprint
+columnTagPrefix: sprint
+columnOrder: todo, doing, done
 
-Inline edits from a board's search/sort/group bars are saved back to that board.
+query: |-
+  tag includes #work
+  not done
+  sort by due
+
+cardColors: |-
+  tag includes #urgent -> red
+  folder includes Work/ -> #3b82f6
+
+collapsedColumns: []
+collapsedGroups: []
+```
+
+Everything about a board lives in its file, including which columns and swimlanes you have folded.
+
+Boards are still configured in **Settings**, which lists every board file and writes your edits back to it on Save. The **Boards folder** setting says where new boards are created and which folder is listed (default `Kanban`; empty means the vault root).
+
+The **base board** is the exception: it has no file. It is the shared **base query** merged on top of every board, opened with the *Open board* command and configured in Settings.
+
+Inline edits from a board's search/sort/group bars are saved back to that board's file.
 
 ### Filtering, sorting, and grouping
 
