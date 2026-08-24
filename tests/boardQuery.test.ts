@@ -234,7 +234,7 @@ describe("parseQuery", () => {
     });
 
     it("flags valid-but-unsupported Tasks instructions", () => {
-      for (const line of ["path includes Projects", "priority is high"]) {
+      for (const line of ["recurring", "priority is high"]) {
         const { query, errors } = parseQuery(line);
         expect(query.filters).toEqual([]);
         expect(errors).toHaveLength(1);
@@ -254,7 +254,7 @@ describe("parseQuery", () => {
 
     it("keeps valid lines while collecting errors for bad ones", () => {
       const { query, errors } = parseQuery(
-        "tag includes #work\npath includes X\nsort by due",
+        "tag includes #work\npriority is high\nsort by due",
       );
       expect(getTags(query)).toEqual(["work"]);
       expect(query.sort.field).toBe("dueDate");
@@ -464,6 +464,56 @@ describe("applyBoardQuery", () => {
     ];
     const { query } = parseQuery("description includes WRITE");
     expect(ids(applyBoardQuery(tasks, query))).toEqual(["a"]);
+  });
+
+  describe("location filters", () => {
+    const board = () => [
+      createTask({
+        id: "work",
+        taskLocation: { path: "Work/Projects/Alpha.md", lineNumber: 1 },
+      }),
+      createTask({
+        id: "inbox",
+        taskLocation: { path: "Inbox.md", lineNumber: 1 },
+      }),
+    ];
+
+    it("filters by path", () => {
+      const { query } = parseQuery("path includes Work/");
+      expect(ids(applyBoardQuery(board(), query))).toEqual(["work"]);
+    });
+
+    it("filters by folder, with / matching the vault root", () => {
+      const { query } = parseQuery("folder includes Projects");
+      expect(ids(applyBoardQuery(board(), query))).toEqual(["work"]);
+    });
+
+    it("filters by filename", () => {
+      const { query } = parseQuery("filename includes Inbox");
+      expect(ids(applyBoardQuery(board(), query))).toEqual(["inbox"]);
+    });
+
+    it("ANDs location filters with tag filters", () => {
+      const tasks = [
+        createTask({
+          id: "keep",
+          tags: ["work"],
+          taskLocation: { path: "Work/Alpha.md", lineNumber: 1 },
+        }),
+        createTask({
+          id: "wrongPath",
+          tags: ["work"],
+          taskLocation: { path: "Inbox.md", lineNumber: 1 },
+        }),
+      ];
+      const { query } = parseQuery("tag includes #work\npath includes Work/");
+      expect(ids(applyBoardQuery(tasks, query))).toEqual(["keep"]);
+    });
+
+    it("round-trips through serializeQuery", () => {
+      const source = "path does not include Archive\nfolder includes Work/";
+      expect(serializeQuery(parseQuery(source).query)).toBe(source);
+    });
   });
 
   describe("status filters", () => {

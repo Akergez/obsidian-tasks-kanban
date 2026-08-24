@@ -19,6 +19,12 @@ import {
   type DateFilterInstruction,
 } from "../utils/dateFilter";
 import {
+  parseLocationFilter,
+  matchesLocationFilter,
+  serializeLocationFilter,
+  type LocationFilterInstruction,
+} from "../utils/locationFilter";
+import {
   parseStatusFilter,
   matchesStatusFilter,
   serializeStatusFilter,
@@ -38,6 +44,8 @@ import {
  *   tag includes #<tag>
  *   tag not includes #<tag>
  *   description includes <text>
+ *   <path|filename|folder> (includes|does not include) <text>
+ *   <path|filename|folder> (regex matches|regex does not match) /<pattern>/
  *   done | not done
  *   status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>
  *   status.name (includes|does not include) <text>
@@ -70,7 +78,8 @@ export type FilterInstruction =
   | { kind: "tag"; value: string; negated?: boolean }
   | { kind: "description"; value: string }
   | DateFilterInstruction
-  | StatusFilterInstruction;
+  | StatusFilterInstruction
+  | LocationFilterInstruction;
 
 /** An empty query: no filters, no sorting, no grouping. */
 export const EMPTY_QUERY: BoardQuery = {
@@ -127,7 +136,7 @@ const GROUP_FIELD_TO_KEYWORD: Partial<Record<GroupField, string>> = {
 
 /** One-line summary of the supported syntax, used in error messages. */
 const SUPPORTED_SYNTAX =
-  "supported: tag includes #<tag>, tag not includes #<tag>, description includes <text>, done, not done, status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>, status.name (includes|does not include) <text>, status.name (regex matches|regex does not match) /<pattern>/, <date-field> <operator> <value> (e.g., starts before tomorrow), sort by <due|scheduled|start|created|priority|filename> [reverse], group by <status|priority|tags|path|folder|filename> [reverse]";
+  "supported: tag includes #<tag>, tag not includes #<tag>, description includes <text>, <path|filename|folder> (includes|does not include) <text>, done, not done, status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>, status.name (includes|does not include) <text>, status.name (regex matches|regex does not match) /<pattern>/, <date-field> <operator> <value> (e.g., starts before tomorrow), sort by <due|scheduled|start|created|priority|filename> [reverse], group by <status|priority|tags|path|folder|filename> [reverse]";
 
 /**
  * Parse a multi-line query string into a {@link BoardQuery}. One instruction per
@@ -236,6 +245,13 @@ function parseLine(line: string): {
     return { group: { field, direction } };
   }
 
+  const locationFilter = parseLocationFilter(line);
+  if (locationFilter) {
+    return "error" in locationFilter
+      ? { error: locationFilter.error }
+      : { filter: locationFilter.filter };
+  }
+
   // Status filters run before the date parser: `done` is also a date keyword
   // (`done before 2026-01-01`), and parseStatusFilter only claims the bare word.
   const statusFilter = parseStatusFilter(line);
@@ -316,6 +332,8 @@ function serializeFilter(filter: FilterInstruction): string {
       return serializeDateFilter(filter);
     case "status":
       return serializeStatusFilter(filter);
+    case "location":
+      return serializeLocationFilter(filter);
   }
 }
 
@@ -409,6 +427,10 @@ function filterTasks(tasks: Task[], filters: FilterInstruction[]): Task[] {
     (f): f is StatusFilterInstruction => f.kind === "status",
   );
 
+  const locationFilters = filters.filter(
+    (f): f is LocationFilterInstruction => f.kind === "location",
+  );
+
   return tasks.filter((task) => {
     const taskTags = (task.tags ?? []).map(normalizeTag);
 
@@ -435,6 +457,13 @@ function filterTasks(tasks: Task[], filters: FilterInstruction[]): Task[] {
     // Status filters: AND'd — all must match, as in Tasks.
     for (const statusFilter of statusFilters) {
       if (!matchesStatusFilter(task, statusFilter)) {
+        return false;
+      }
+    }
+
+    // Location filters: AND'd — all must match, as in Tasks.
+    for (const locationFilter of locationFilters) {
+      if (!matchesLocationFilter(task, locationFilter)) {
         return false;
       }
     }

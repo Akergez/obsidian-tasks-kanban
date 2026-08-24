@@ -70,7 +70,7 @@ describe("parseColorRules", () => {
 
   it("reports an unsupported filter, with the line number", () => {
     const { rules, errors } = parseColorRules(
-      "tag includes #a -> red\npath includes X -> blue",
+      "tag includes #a -> red\npriority is high -> blue",
     );
     expect(rules).toHaveLength(1);
     expect(errors).toHaveLength(1);
@@ -117,5 +117,29 @@ describe("colorFor", () => {
 
   it("returns undefined with no rules at all", () => {
     expect(colorFor(createTask(), [])).toBeUndefined();
+  });
+
+  it("colours by file location, the same as a query would filter", () => {
+    const { rules, errors } = parseColorRules(
+      [
+        "folder includes Work/ -> #3b82f6",
+        "path includes Archive -> gray",
+      ].join("\n"),
+    );
+    expect(errors).toEqual([]);
+
+    const inWork = createTask({
+      taskLocation: { path: "Work/Alpha.md", lineNumber: 1 },
+    });
+    const archived = createTask({
+      taskLocation: { path: "Archive/Old.md", lineNumber: 1 },
+    });
+    const elsewhere = createTask({
+      taskLocation: { path: "Inbox.md", lineNumber: 1 },
+    });
+
+    expect(colorFor(inWork, rules)).toBe("#3b82f6");
+    expect(colorFor(archived, rules)).toBe("gray");
+    expect(colorFor(elsewhere, rules)).toBeUndefined();
   });
 });

@@ -84,6 +84,7 @@ The board supports a subset of Tasks query syntax. For complete documentation, s
 **Filtering:**
 - `tag includes #<tag>` — show tasks with the specified tag
 - `description includes <text>` — show tasks whose description contains the text
+- `path` / `filename` / `folder` `includes <text>` — filter by where the task lives
 
 **Sorting:**
 - `sort by <field>` / `sort by <field> reverse`
@@ -117,7 +118,8 @@ Each card has a **spine** — a coloured strip down its left edge — that you c
 ```
 tag includes #urgent -> red
 status.type is IN_PROGRESS -> #3b82f6
-due before today -> orange
+folder includes Work/ -> #3b82f6
+path does not include Archive -> orange
 not done -> var(--text-muted)
 ```
 

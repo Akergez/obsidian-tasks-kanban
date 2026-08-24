@@ -17,6 +17,14 @@ Each instruction should be on its own line. Blank lines are ignored.
 | `status.type (is\|is not) <TYPE>` | Filter by status type | `status.type is not NON_TASK` |
 | `status.name (includes\|does not include) <text>` | Case-insensitive substring match on the status name | `status.name includes progress` |
 | `status.name (regex matches\|regex does not match) /<pattern>/` | Regex match on the status name (case-sensitive unless the `i` flag is given) | `status.name regex matches /^In/i` |
+| `path (includes\|does not include) <text>` | Case-insensitive substring of the full path from the vault root | `path includes Work/` |
+| `filename (includes\|does not include) <text>` | Case-insensitive substring of the file name | `filename includes Alpha` |
+| `folder (includes\|does not include) <text>` | Case-insensitive substring of the containing folder | `folder includes Projects` |
+| `<path\|filename\|folder> (regex matches\|regex does not match) /<pattern>/` | Regex match (case-sensitive unless the `i` flag is given) | `path regex matches /^Work/i` |
+
+#### File Location Fields
+
+`path` is the whole path from the vault root and `filename` is the file name — **both keep the `.md` extension**, as they do in Tasks. `folder` is the containing directory, which is `/` for a note at the vault root.
 
 #### Status Types
 
@@ -121,8 +129,6 @@ group by priority
 
 The following Tasks query instructions are **not** supported and will be reported as errors:
 
-- `path includes` / `path does not include`
-- `filename includes` / `filename does not include`
 - `priority is <value>` (use `sort by priority` for sorting)
 - `due on` / `due before` / `due after` (date filtering)
 - `scheduled on` / `scheduled before` / `scheduled after`
