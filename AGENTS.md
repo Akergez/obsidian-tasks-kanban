@@ -64,6 +64,7 @@ obsidian-tasks-kanban/
 │   │   ├── SortBar.ts               # Sort control
 │   │   ├── GroupBar.ts              # Grouping control
 │   │   ├── QueryModal.ts            # Raw query editor
+│   │   ├── BoardSettingsModal.ts    # One board's own settings, opened on the board
 │   │   └── BoardPickerModal.ts      # Saved-board picker
 │   ├── query/
 │   │   ├── boardQuery.ts            # Query parse/serialize/apply (filters+sort+group)
@@ -80,7 +81,7 @@ obsidian-tasks-kanban/
 │   │   ├── searchFilter.ts          # Tag/title helpers
 │   │   └── taskChips.ts             # Card metadata chips
 │   ├── settings/
-│   │   └── SettingsTab.ts           # Task format + base board + board files + columns editor
+│   │   └── SettingsTab.ts           # Only what is shared across every board
 │   └── types/
 │       └── persistence.ts           # Persisted data model
 ├── styles.css                      # Board styles
@@ -113,6 +114,24 @@ The plugin integrates with the [Tasks](https://github.com/obsidian-tasks-group/o
 - **Data Transfer**: Uses custom data types (`application/task-id`, `application/task-path`)
 - **Visual Feedback**: CSS classes for dragging/drop states
 - **Status Update**: On drop, updates task status in source file → Tasks detects change → auto-refresh
+
+### Where Settings Live
+
+Split by scope, and the split is load-bearing:
+
+- **Plugin settings** (`settings/SettingsTab.ts`) hold only what is shared across every board: task format, base query, base card colours, the two folders. It never lists boards — boards are files and a vault accumulates them (the weekly planner adds one a week), so a pane that listed them would scroll without end.
+- **A board's own settings** (`components/BoardSettingsModal.ts`) are opened from a gear button in the board header. The modal edits a `BoardSettingsDraft` copy and hands the whole thing back on Save, so Cancel really cancels and one Save is one write.
+
+`SettingsTab.getSettingDefinitions()` returns `[]` **on purpose**: Obsidian 1.13 skips `display()` whenever it returns anything, and filling it in is how the per-board settings once went missing entirely.
+
+### Merging Shared Settings Into a Board
+
+Two shared values reach every board through `BoardStatePersistence`:
+
+- `getBaseQuery()` → `mergeQueries(base, own)`.
+- `getBaseCardColors()` → `KanbanBoard.buildColorRules()` concatenates **own rules first, shared below**. `colorFor` takes the first match, so order is priority: a board overrides a shared colour and inherits the rest.
+
+The base board returns `""` from `getBaseCardColors()` — its own rules *are* the shared ones, so merging would only duplicate them.
 
 ### Board Types and Columns
 

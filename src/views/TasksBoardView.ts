@@ -23,6 +23,8 @@ export const BOARD_VIEW_TYPE = "tasks-board";
 export interface BoardHost {
   /** The shared base query merged into every board. */
   getBaseQuery(): string;
+  /** The shared card-colour rules merged into every board. */
+  getBaseCardColors(): string;
   /** Persistence for the base board — the one view that is not a file. */
   baseBoardPersistence(): BoardStatePersistence;
 }
@@ -58,6 +60,7 @@ export class TasksBoardView extends TextFileView {
     this.host = host;
     this.persistence = {
       getBaseQuery: () => this.host.getBaseQuery(),
+      getBaseCardColors: () => this.host.getBaseCardColors(),
       get: () => this.readState(),
       save: (state) => this.writeState(state),
     };

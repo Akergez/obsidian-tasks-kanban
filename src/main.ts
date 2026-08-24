@@ -104,6 +104,9 @@ export default class TasksKanbanPlugin extends Plugin {
   baseBoardPersistence(): BoardStatePersistence {
     return {
       getBaseQuery: () => this.data.baseQuery,
+      // The base board's own colour rules ARE the shared ones, so there is
+      // nothing to append: merging here would just duplicate every rule.
+      getBaseCardColors: () => "",
       get: () => ({
         query: this.data.baseQuery,
         boardType: this.data.baseBoardType,
@@ -116,13 +119,22 @@ export default class TasksKanbanPlugin extends Plugin {
         dateColumns: this.data.baseDateColumns,
         cardColors: this.data.baseCardColors,
       }),
+      // The base board owns its whole slice now that a board's settings are
+      // edited on the board itself; the settings pane only keeps what is
+      // shared across every board.
       save: (state: BoardOwnState) => {
         this.data = {
           ...this.data,
           baseQuery: state.query,
+          baseBoardType: state.boardType,
           baseCollapsedColumns: state.collapsedColumns,
           baseCollapsedGroups: state.collapsedGroups,
           baseColumns: state.columns,
+          baseColumnTagPrefix: state.columnTagPrefix,
+          baseColumnOrder: state.columnOrder,
+          baseDateField: state.dateField,
+          baseDateColumns: state.dateColumns,
+          baseCardColors: state.cardColors,
         };
         return this.saveData(this.data);
       },
@@ -200,6 +212,7 @@ export default class TasksKanbanPlugin extends Plugin {
     this.registerView(BOARD_VIEW_TYPE, (leaf: WorkspaceLeaf) => {
       return new TasksBoardView(leaf, tasksIntegration, {
         getBaseQuery: () => this.data.baseQuery,
+        getBaseCardColors: () => this.data.baseCardColors,
         baseBoardPersistence: () => this.baseBoardPersistence(),
       });
     });

@@ -891,3 +891,23 @@
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
 }
+
+/* Settings: a board's own settings, edited on the board itself.
+   Seven weekday columns make this modal tall, so the body scrolls while the
+   heading and the Save/Cancel row stay put. */
+.tasks-kanban-board-settings-modal {
+    display: flex;
+    flex-direction: column;
+    max-height: 70vh;
+}
+
+.tasks-kanban-board-settings-body {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+/* The date input sits next to the (optional) column name in one row. */
+.tasks-kanban-board-settings-modal .tasks-kanban-setting-column input[type="date"] {
+    width: auto;
+}

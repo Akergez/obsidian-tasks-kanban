@@ -7,6 +7,10 @@ import { SearchBar } from "./SearchBar";
 import { SortBar } from "./SortBar";
 import { GroupBar } from "./GroupBar";
 import { QueryModal } from "./QueryModal";
+import {
+  BoardSettingsModal,
+  type BoardSettingsDraft,
+} from "./BoardSettingsModal";
 import { resolveColumns } from "../utils/statusColumns";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
 import { buildTagColumns, parseColumnOrder } from "../utils/tagColumns";
@@ -112,7 +116,7 @@ export class KanbanBoard {
     this.dateField = initial.dateField;
     this.dateColumns = initial.dateColumns;
     this.cardColors = initial.cardColors;
-    this.colorRules = parseColorRules(this.cardColors).rules;
+    this.colorRules = this.buildColorRules();
 
     // Search, sort, and query-edit controls sit above the board in a shared row.
     const header = this.container.createDiv({ cls: "tasks-kanban-header" });
@@ -158,6 +162,7 @@ export class KanbanBoard {
     );
 
     this.createQueryButton(header);
+    this.createSettingsButton(header);
 
     // The lanes render into their own board sub-element.
     this.boardEl = this.container.createDiv({ cls: "tasks-kanban-board" });
@@ -191,6 +196,82 @@ export class KanbanBoard {
       this.persistState();
       this.applyQuery();
     }).open();
+  }
+
+  /**
+   * Add the "Board settings" header button. A board's own settings live on the
+   * board, not in the plugin's settings pane: boards are files and a vault
+   * accumulates them, so a pane listing every board would grow without bound.
+   */
+  private createSettingsButton(header: HTMLElement) {
+    const button = header.createEl("button", {
+      cls: "tasks-kanban-query-button",
+      attr: { type: "button", "aria-label": "Board settings" },
+    });
+    setIcon(button, "settings");
+    button.addEventListener("click", () => this.openSettingsModal());
+  }
+
+  /**
+   * Open this board's settings, then apply and persist whatever comes back.
+   * The modal hands over a whole draft, so one Save is one write.
+   */
+  private openSettingsModal() {
+    const draft: BoardSettingsDraft = {
+      query: serializeQuery(this.boardQuery),
+      boardType: this.boardType,
+      columnTagPrefix: this.columnTagPrefix,
+      columnOrder: this.columnOrder,
+      dateField: this.dateField,
+      dateColumns: this.dateColumns,
+      columns: this.columnConfigs,
+      cardColors: this.cardColors,
+    };
+
+    new BoardSettingsModal(
+      this.app,
+      "Board settings",
+      draft,
+      this.tasksIntegration.getStatuses(),
+      (next) => {
+        this.boardQuery = parseQuery(next.query).query;
+        this.boardType = next.boardType;
+        this.columnTagPrefix = next.columnTagPrefix;
+        this.columnOrder = next.columnOrder;
+        this.dateField = next.dateField;
+        this.dateColumns = next.dateColumns;
+        this.columnConfigs = next.columns;
+        this.cardColors = next.cardColors;
+        this.colorRules = this.buildColorRules();
+        this.searchBar.setState({
+          titleQuery: getTitle(this.boardQuery),
+          selectedTags: getTags(this.boardQuery),
+          excludedTags: getExcludedTags(this.boardQuery),
+        });
+        this.sortBar.setState(getSort(this.boardQuery));
+        this.groupBar.setState(getGroup(this.boardQuery));
+        this.persistState();
+        this.applyQuery();
+      },
+    ).open();
+  }
+
+  /**
+   * This board's colour rules, with the shared ones from plugin settings
+   * appended **below** them.
+   *
+   * {@link colorFor} takes the first matching rule, so order is priority:
+   * appending puts a board's own rule ahead of a shared one, letting a board
+   * override the shared palette while still inheriting everything it does not
+   * mention. The base board appends nothing — its own rules *are* the shared
+   * ones, so merging would only duplicate them.
+   */
+  private buildColorRules(): ColorRule[] {
+    const shared = this.persistence.getBaseCardColors();
+    const lines = [this.cardColors, shared].filter(
+      (value) => value.trim() !== "",
+    );
+    return parseColorRules(lines.join("\n")).rules;
   }
 
   /**
@@ -296,7 +377,7 @@ export class KanbanBoard {
     this.dateField = state.dateField;
     this.dateColumns = state.dateColumns;
     this.cardColors = state.cardColors;
-    this.colorRules = parseColorRules(this.cardColors).rules;
+    this.colorRules = this.buildColorRules();
     this.searchBar.setState({
       titleQuery: getTitle(this.boardQuery),
       selectedTags: getTags(this.boardQuery),

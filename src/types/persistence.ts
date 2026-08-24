@@ -212,6 +212,12 @@ export interface BoardStatePersistence {
   get(): BoardOwnState;
   /** The shared base query prefix, merged on top of {@link get}'s query. */
   getBaseQuery(): string;
+  /**
+   * The shared card-colour rules, appended **below** this board's own (see
+   * buildColorRules in KanbanBoard): the first matching rule wins, so a board's
+   * own rule always beats a shared one.
+   */
+  getBaseCardColors(): string;
   /** Persist this board's own slice. Never writes the base prefix. */
   save(state: BoardOwnState): void | Promise<void>;
 }

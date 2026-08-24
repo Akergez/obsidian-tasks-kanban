@@ -11,6 +11,7 @@ A Kanban board view plugin for Obsidian that displays Tasks in a visual board la
 - **Weekly Planner**: One ribbon click opens this week's board — a column per weekday, created once and reopened after that
 - **Boards Are Files**: Each board is a readable `.kanban` YAML file in your vault — click it to open, and it syncs and versions like any note
 - **Base Query**: A shared query merged into every board, so common filters live in one place
+- **Per-Board Settings**: Each board is configured on the board itself, from a gear button — settings never turn into an endless list
 - **Custom Columns**: Optionally replace the default status columns with your own, mapping each column to specific status symbols (e.g. split "In Progress" into "Ongoing" `/` and "In Review" `A`)
 - **Grouping (Swimlanes)**: Group cards into foldable lanes by status, priority, tags, path, folder, or filename
 - **Sorting**: Sort cards by priority or a date field, ascending or descending
@@ -53,23 +54,23 @@ The calendar button in the left ribbon opens **this week's planner**: a [date bo
 
 The board is named after its ISO week (`2026-W35`), which is also its file name, so the week *is* its identity:
 
-- The first time you ask for a week, the file is created in the **Weekly planner folder** (Settings → Boards; default `Kanban/Weekly`, empty means the vault root).
+- The first time you ask for a week, the file is created in the **Weekly planner folder** (plugin Settings → Boards; default `Kanban/Weekly`, empty means the vault root).
 - Asking again later in the same week reopens that same board — your columns, folds and query are all still there. Nothing is regenerated or overwritten.
 - A new week has no file yet, so a fresh one is written.
 
-Weeks start on Monday. The planner's columns use the **scheduled** date; change the board's date field in Settings afterwards if you'd rather plan by due date — though that choice lives in the board file, so next week's planner starts on scheduled again.
+Weeks start on Monday. The planner's columns use the **scheduled** date; change the board's date field from its gear button afterwards if you'd rather plan by due date — though that choice lives in the board file, so next week's planner starts on scheduled again.
 
-By default the folder sits inside the boards folder, so weekly boards also show up in *Open board…* and in Settings like any other board.
+By default the folder sits inside the boards folder, so weekly boards also show up in *Open board…* like any other board.
 
 ### Columns
 
-Every board has a **board type**, chosen explicitly in Settings, that says what its columns are: **status columns**, **tag columns**, or **date columns**. Switching type keeps the other types' settings, so you can switch back without re-entering them.
+Every board has a **board type**, chosen explicitly in that board's settings (the gear button above the board), that says what its columns are: **status columns**, **tag columns**, or **date columns**. Switching type keeps the other types' settings, so you can switch back without re-entering them.
 
 #### Status columns
 
 The default. One column per status type (Todo, In Progress, Done, Cancelled), derived from your Tasks status configuration.
 
-You can instead define **custom columns** per board. Each custom column is a partition over status symbols — pick which statuses it collects, and the first one becomes the symbol written when you drop a card into it. This lets you, for example, split "In Progress" into separate "Ongoing" (`/`) and "In Review" (`A`) columns.
+You can instead define **custom columns** per board, in its settings. Each custom column is a partition over status symbols — pick which statuses it collects, and the first one becomes the symbol written when you drop a card into it. This lets you, for example, split "In Progress" into separate "Ongoing" (`/`) and "In Review" (`A`) columns.
 
 #### Tag columns
 
@@ -166,9 +167,11 @@ collapsedGroups: []
 
 Everything about a board lives in its file, including which columns and swimlanes you have folded. Boards written before board types were explicit have no `boardType:` key; they keep the type their column-tag prefix used to imply, and gain the key the next time they are saved.
 
-Boards are still configured in **Settings**, which lists every board file and writes your edits back to it on Save. The **Boards folder** setting says where new boards are created and which folder is listed (default `Kanban`; empty means the vault root).
+A board is configured **on the board**: the gear button above it opens that board's settings — its query, board type, columns and card colours. They are written back to its file on Save.
 
-The **base board** is the exception: it has no file. It is the shared **base query** merged on top of every board, opened with the *Open board* command and configured in Settings.
+Plugin **Settings** keeps only what is shared across every board: the task format, the **base query** and **base card colours** merged into each board, and the folders boards are created in (**Boards folder**, default `Kanban`; empty means the vault root).
+
+The **base board** is the exception: it has no file. It is opened with the *Open board* command, and its own settings — including the base query and colours it shares with every other board — are stored in the plugin's data.
 
 Inline edits from a board's search/sort/group bars are saved back to that board's file.
 
@@ -208,17 +211,20 @@ Nested tasks are not board citizens: **their tags are ignored everywhere** — t
 
 ### Card colours
 
-Each card has a **spine** — a coloured strip down its left edge — that you can drive from board settings. Add one rule per line under **Card colours**: a filter, `->`, and a CSS colour.
+Rules paint a card's left edge. One rule per line: a filter, then `->`, then a CSS colour.
 
 ```
 tag includes #urgent -> red
 status.type is IN_PROGRESS -> #3b82f6
-folder includes Work/ -> #3b82f6
-path does not include Archive -> orange
-not done -> var(--text-muted)
+due before today -> orange
 ```
 
-The filter is the same syntax as the board query, so anything you can filter on you can colour on. The **first matching rule wins**, so put the most specific ones at the top; a card matching no rule gets no spine. Named colours, hex, `rgb()`/`hsl()` and `var(--…)` all work.
+They live in two places, and both apply:
+
+- **Base card colours** (Settings → Shared across every board) — the shared palette, applied to every board.
+- A board's own rules (gear button on the board) — for that board only.
+
+A board's own rules are checked first and the shared ones follow, so a board can override a shared colour and still inherit every rule it does not mention. Within each group the topmost line wins, so put the most specific rule at the top.
 
 ### Drag & Drop
 
