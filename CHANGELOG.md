@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.15.0...0.15.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* settings ([0de4aa2](https://github.com/Akergez/obsidian-tasks-kanban/commit/0de4aa244036b1d3803b1d7a617293eb82ddd3ad))
+
 ## [0.15.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.14.0...0.15.0) (2026-08-24)
 
 
