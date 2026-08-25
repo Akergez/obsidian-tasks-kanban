@@ -262,28 +262,32 @@ export class KanbanCard {
   }
 
   /**
-   * Where the task lives, outermost first: the note, then each heading it sits
-   * under.
+   * Where the task lives, **nearest first**: the heading it sits directly
+   * under, then each heading around that, and the note last.
    *
-   * The headings are what turn "somewhere in Work" into "Work › Sprint 3 ›
-   * Todo" — on a board that gathers tasks from a whole vault, the note's name
-   * alone often names a container far too big to place anything in.
+   * The order is the point. `Todo › Sprint 3 › Projects` leads with the section
+   * that actually places the task, and the reader can stop as soon as they know
+   * enough; the note's name is the widest container and the least it says, so it
+   * comes last. The headings are what turn "somewhere in Projects" into
+   * something locatable at all — on a board gathering tasks from a whole vault,
+   * a note's name alone often names a container far too big to place anything
+   * in.
    */
   private locationTrail(): string[] {
     const fileName = taskFileName(this.task);
     const headings = taskHeadings(this.app, this.task);
     if (fileName === "") {
-      return headings;
+      return [...headings].reverse();
     }
 
     // A note titled with an `# H1` repeating its own file name is a common
-    // habit, and "Projects › Projects › Todo" says nothing the first segment
-    // did not. The heading is dropped, never the file name: the file name is
-    // there whether or not the note has headings at all.
-    const first = headings[0]?.toLowerCase();
-    const rest =
-      first === fileName.toLowerCase() ? headings.slice(1) : headings;
-    return [fileName, ...rest];
+    // habit, and "Todo › Projects › Projects" says nothing the note's name did
+    // not. The heading dropped is the outermost one — the file name always
+    // stays, since it is there whether or not the note has headings at all.
+    const outermost = headings[0]?.toLowerCase();
+    const inside =
+      outermost === fileName.toLowerCase() ? headings.slice(1) : headings;
+    return [...inside].reverse().concat(fileName);
   }
 
   /**

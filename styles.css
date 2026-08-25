@@ -633,7 +633,11 @@
     opacity: 0.6;
 }
 
-/* The note's name leads the trail, so it carries the weight */
+/*
+ * The trail reads inwards-out, so the first segment is the heading the task
+ * sits directly under — the one that places it. It carries the weight; the
+ * wider containers behind it stay faint.
+ */
 .tasks-kanban-card-file-part:first-child {
     color: var(--text-muted);
 }

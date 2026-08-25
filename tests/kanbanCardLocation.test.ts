@@ -3,9 +3,10 @@ import { KanbanCard } from "../src/components/KanbanCard";
 import type { Task } from "../src/services/TasksIntegration";
 
 /**
- * What a card says about where its task lives: the note, then every heading
- * above the task — drawn in full, since a location that has to be read from a
- * tooltip would not be worth showing.
+ * What a card says about where its task lives: the heading it sits directly
+ * under, then each heading around that, with the note last — drawn in full,
+ * since a location that has to be read from a tooltip would not be worth
+ * showing.
  */
 
 function task(overrides: Partial<Task> = {}): Task {
@@ -63,25 +64,33 @@ function segments(container: HTMLElement): string[] {
 }
 
 describe("KanbanCard: where the task lives", () => {
-  it("names the note and every heading above the task", () => {
+  it("names every heading above the task, then the note", () => {
     const container = render(task(), [
       heading("Backlog", 1, 0),
       heading("Sprint 3", 2, 8),
       heading("Todo", 3, 10),
     ]);
-    // The note's own name leads, then the headings inside it.
+    // Nearest first: the section the task is in, then what contains that.
     expect(segments(container)).toEqual([
-      "Projects",
-      "Backlog",
-      "Sprint 3",
       "Todo",
+      "Sprint 3",
+      "Backlog",
+      "Projects",
     ]);
   });
 
-  it("leads with the note's name", () => {
+  it("leads with the heading the task is directly under", () => {
     const container = render(task(), [heading("Todo", 1, 1)]);
-    expect(segments(container)[0]).toBe("Projects");
-    expect(segments(container)).toEqual(["Projects", "Todo"]);
+    expect(segments(container)[0]).toBe("Todo");
+    expect(segments(container)).toEqual(["Todo", "Projects"]);
+  });
+
+  it("ends with the note, however deep the task sits", () => {
+    const container = render(task(), [
+      heading("Backlog", 1, 0),
+      heading("Todo", 2, 8),
+    ]);
+    expect(segments(container).at(-1)).toBe("Projects");
   });
 
   it("leaves out headings the task does not sit under", () => {
@@ -89,7 +98,7 @@ describe("KanbanCard: where the task lives", () => {
       heading("Sprint 2", 2, 1),
       heading("Sprint 3", 2, 9),
     ]);
-    expect(segments(container)).toEqual(["Projects", "Sprint 3"]);
+    expect(segments(container)).toEqual(["Sprint 3", "Projects"]);
   });
 
   it("separates the segments with a chevron", () => {
@@ -105,7 +114,7 @@ describe("KanbanCard: where the task lives", () => {
       heading("Projects", 1, 0),
       heading("Todo", 2, 8),
     ]);
-    expect(segments(container)).toEqual(["Projects", "Todo"]);
+    expect(segments(container)).toEqual(["Todo", "Projects"]);
   });
 
   it("is the note alone when it has no headings above the task", () => {
@@ -138,6 +147,6 @@ describe("KanbanCard: where the task lives", () => {
         (el) => el.textContent,
       ),
     ).toEqual(["#work"]);
-    expect(segments(container)).toEqual(["Projects", "Todo"]);
+    expect(segments(container)).toEqual(["Todo", "Projects"]);
   });
 });
