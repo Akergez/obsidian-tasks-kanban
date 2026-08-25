@@ -260,7 +260,11 @@ export default class TasksKanbanPlugin extends Plugin {
     // which is what makes clicking one in the file explorer open the board.
     this.registerEvent(
       this.app.workspace.on("file-open", () => {
-        void this.swapBoardLeaves();
+        this.swapBoardLeaves().catch((error) => {
+          // A rejected promise here used to vanish, and with it the reason a
+          // board opened as a page of YAML. Say so instead.
+          console.error("Tasks Kanban: could not open a board note", error);
+        });
       }),
     );
 

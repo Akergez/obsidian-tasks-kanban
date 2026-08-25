@@ -1,5 +1,3 @@
-import { BOARD_FRONTMATTER } from "../services/BoardNotes";
-
 /**
  * A board lives inside an ordinary note, as a fenced code block:
  *
@@ -17,6 +15,20 @@ import { BOARD_FRONTMATTER } from "../services/BoardNotes";
  * in a note rather than in a file only this plugin can open.
  */
 export const BOARD_BLOCK_LANGUAGE = "tasks-kanban";
+
+/**
+ * The frontmatter key a note declares itself a board with.
+ *
+ * Needed because a fenced block is invisible to Obsidian's metadata cache: it
+ * records that a note has a code section but not what language it is in, so
+ * telling boards from ordinary notes without reading them takes a declaration.
+ * It lives here, with the rest of what a board note looks like, so nothing has
+ * to import a service to write one.
+ */
+export const BOARD_FRONTMATTER_KEY = "tasks-kanban";
+
+/** The frontmatter block the plugin writes above a board it creates. */
+export const BOARD_FRONTMATTER = `---\n${BOARD_FRONTMATTER_KEY}: true\n---\n\n`;
 
 /** The opening fence of a board block, with any indentation it was written at. */
 const OPEN_FENCE = new RegExp(

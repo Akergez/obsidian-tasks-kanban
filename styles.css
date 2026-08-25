@@ -916,7 +916,18 @@
    Obsidian offers no API for a file's icon in the explorer, so the plugin marks
    the row (see services/BoardIcons) and the icon is drawn here: the same lucide
    "columns" glyph the board's tab carries, as a mask so it takes the theme's
-   own text colour and dims with the row like any other. */
+   own text colour and dims with the row like any other.
+
+   Whatever icon the row already had is hidden first: the board icon stands in
+   for a board note's file icon rather than joining it. The selectors cover
+   Obsidian's own icon element and the ones themes and icon plugins add. */
+.nav-file-title[data-tasks-kanban="true"] > .tree-item-icon,
+.nav-file-title[data-tasks-kanban="true"] > .nav-file-icon,
+.nav-file-title[data-tasks-kanban="true"] > .obsidian-icon-folder-icon,
+.nav-file-title[data-tasks-kanban="true"] .tree-item-inner > .obsidian-icon-folder-icon {
+    display: none;
+}
+
 .nav-file-title[data-tasks-kanban="true"] .tree-item-inner::before {
     content: "";
     display: inline-block;

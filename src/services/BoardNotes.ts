@@ -1,19 +1,5 @@
 import { TFile, type App } from "obsidian";
-import { findBoardBlock } from "../query/markdownBoard";
-
-/**
- * The frontmatter key a note declares itself a board with.
- *
- * Needed because a fenced block is invisible to Obsidian's metadata cache: it
- * records that a note has a code section but not what language it is in, so
- * telling boards from ordinary notes would otherwise mean reading every file in
- * the vault. A one-line declaration is cheap, survives a restart, and is
- * something a user can add by hand to a board they wrote themselves.
- */
-export const BOARD_FRONTMATTER_KEY = "tasks-kanban";
-
-/** The frontmatter block the plugin writes above a board it creates. */
-export const BOARD_FRONTMATTER = `---\n${BOARD_FRONTMATTER_KEY}: true\n---\n\n`;
+import { BOARD_FRONTMATTER_KEY, findBoardBlock } from "../query/markdownBoard";
 
 /**
  * Which notes in the vault are boards.
