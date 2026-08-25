@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.17.0...0.18.0) (2026-08-25)
+
+
+### Features
+
+* icons ([c1661cd](https://github.com/Akergez/obsidian-tasks-kanban/commit/c1661cd903db6313d300f97839d1faa70972f07b))
+
 ## [0.17.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.16.2...0.17.0) (2026-08-25)
 
 
