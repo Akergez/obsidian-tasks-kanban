@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.16.2...0.17.0) (2026-08-25)
+
+
+### Features
+
+* board as md ([0e5c810](https://github.com/Akergez/obsidian-tasks-kanban/commit/0e5c810f3d47fe46514ee44d68b5652f803a3df3))
+* scripts and preplannig for weeks ([58a5ab4](https://github.com/Akergez/obsidian-tasks-kanban/commit/58a5ab40856349a8a609bc91c91872149452a57d))
+
 ## [0.16.2](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.16.1...0.16.2) (2026-08-25)
 
 
