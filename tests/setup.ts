@@ -141,6 +141,26 @@ function normalizePathImpl(path: string): string {
     .normalize("NFC");
 }
 
+// Obsidian also exposes the element factories as globals, not only as methods
+// on Element — `createDiv()` with no parent is how a detached element is made.
+// JSDom has no such globals, so code calling one throws a ReferenceError that
+// has nothing to do with what the test is checking.
+const globals = globalThis as Record<string, unknown>;
+const makeEl = (
+  tag: string,
+  opts?: { cls?: string; text?: string },
+): HTMLElement => {
+  const el = document.createElement(tag);
+  if (opts?.cls) el.className = opts.cls;
+  if (opts?.text) el.textContent = opts.text;
+  return el;
+};
+globals.createDiv ??= (opts?: { cls?: string; text?: string }) =>
+  makeEl("div", opts);
+globals.createSpan ??= (opts?: { cls?: string; text?: string }) =>
+  makeEl("span", opts);
+globals.createEl ??= makeEl;
+
 // Obsidian exposes the active window's document as a global; JSDom does not.
 (globalThis as Record<string, unknown>).activeDocument ??= document;
 (globalThis as Record<string, unknown>).activeWindow ??= window;

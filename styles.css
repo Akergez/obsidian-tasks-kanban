@@ -606,15 +606,36 @@
     flex-wrap: wrap;
 }
 
-/* Parent note name, pushed to the trailing edge of the footer */
+/*
+ * Where the task lives — the note, then each heading above it — pushed to the
+ * trailing edge of the footer.
+ *
+ * Drawn in full: it wraps onto as many lines as it needs and the card grows,
+ * rather than ending in an ellipsis that hides the part that places the task.
+ */
 .tasks-kanban-card-file {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: baseline;
+    gap: 0 4px;
     margin-left: auto;
     font-size: 11px;
+    line-height: 1.4;
     color: var(--text-faint);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 55%;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+/* The chevron between two segments of the location */
+.tasks-kanban-card-file-separator {
+    color: var(--text-faint);
+    opacity: 0.6;
+}
+
+/* The note's name leads the trail, so it carries the weight */
+.tasks-kanban-card-file-part:first-child {
+    color: var(--text-muted);
 }
 
 /* Card tags */

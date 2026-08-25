@@ -9,6 +9,7 @@ import {
   type Chip,
 } from "../utils/taskChips";
 import { taskFileName } from "../utils/taskFile";
+import { taskHeadings } from "../utils/taskHeadings";
 import type { SubTask } from "../utils/taskHierarchy";
 import { Menu, setTooltip } from "obsidian";
 import type { App } from "obsidian";
@@ -232,14 +233,15 @@ export class KanbanCard {
   }
 
   /**
-   * Render the footer row: the task's tags, then the name of the note it lives
-   * in. The row is skipped entirely when there is neither — a task with no tags
-   * in a location-less cache entry shouldn't gain an empty gap.
+   * Render the footer row: the task's tags, then where it lives — its note and
+   * the headings it sits under. The row is skipped entirely when there is
+   * neither: a task with no tags in a location-less cache entry shouldn't gain
+   * an empty gap.
    */
   private renderFooter() {
     const tags = this.task.tags ?? [];
-    const fileName = taskFileName(this.task);
-    if (tags.length === 0 && fileName === "") {
+    const trail = this.locationTrail();
+    if (tags.length === 0 && trail.length === 0) {
       return;
     }
 
@@ -254,13 +256,65 @@ export class KanbanCard {
       }
     }
 
-    if (fileName !== "") {
-      const fileEl = footerEl.createSpan({
-        cls: "tasks-kanban-card-file",
-        text: fileName,
-      });
-      setTooltip(fileEl, this.task.taskLocation?.path ?? fileName);
+    if (trail.length > 0) {
+      this.renderLocation(footerEl, trail);
     }
+  }
+
+  /**
+   * Where the task lives, outermost first: the note, then each heading it sits
+   * under.
+   *
+   * The headings are what turn "somewhere in Work" into "Work › Sprint 3 ›
+   * Todo" — on a board that gathers tasks from a whole vault, the note's name
+   * alone often names a container far too big to place anything in.
+   */
+  private locationTrail(): string[] {
+    const fileName = taskFileName(this.task);
+    const headings = taskHeadings(this.app, this.task);
+    if (fileName === "") {
+      return headings;
+    }
+
+    // A note titled with an `# H1` repeating its own file name is a common
+    // habit, and "Projects › Projects › Todo" says nothing the first segment
+    // did not. The heading is dropped, never the file name: the file name is
+    // there whether or not the note has headings at all.
+    const first = headings[0]?.toLowerCase();
+    const rest =
+      first === fileName.toLowerCase() ? headings.slice(1) : headings;
+    return [fileName, ...rest];
+  }
+
+  /**
+   * The location, drawn in full: every segment, separated by a chevron, wrapping
+   * onto as many lines as it takes.
+   *
+   * Nothing is shortened and nothing is dropped — the styling keeps it faint and
+   * small, and the card grows instead. A trail that had to be read from a
+   * tooltip would not be worth showing.
+   */
+  private renderLocation(footerEl: HTMLElement, trail: string[]): void {
+    const locationEl = footerEl.createDiv({
+      cls: "tasks-kanban-card-file",
+    });
+
+    trail.forEach((segment, index) => {
+      if (index > 0) {
+        locationEl.createSpan({
+          cls: "tasks-kanban-card-file-separator",
+          text: "›",
+        });
+      }
+      locationEl.createSpan({
+        cls: "tasks-kanban-card-file-part",
+        text: segment,
+      });
+    });
+
+    // The path is the one part of the location the trail does not say, since it
+    // names the note and not the folders above it.
+    setTooltip(locationEl, this.task.taskLocation?.path ?? trail.join(" › "));
   }
 
   /**
