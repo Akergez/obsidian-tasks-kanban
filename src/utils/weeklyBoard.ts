@@ -100,8 +100,9 @@ export function unplannedColumn(dateField: DateField): MetaColumnConfig {
 
 /**
  * Build the weekly planner for the week starting at `monday`: a date board with
- * one column per weekday, led by the {@link unplannedColumn} pool, named after
- * the ISO week.
+ * one column per weekday, led by the {@link unplannedColumn} pool (and with no
+ * "No date" catch-all, which that pool makes redundant), named after the ISO
+ * week.
  *
  * Column ids are derived from the day rather than random, so the file is a pure
  * function of the week — regenerating it would produce the same document, and a
@@ -117,6 +118,9 @@ export function buildWeeklyBoard(
     boardType: "date",
     dateField,
     metaColumns: [unplannedColumn(dateField)],
+    // The pool already holds the undated work worth seeing, so a "No date"
+    // column would add nothing but finished leftovers.
+    noDateColumn: false,
     dateColumns: days.map((date, index) => ({
       id: `date:${date}`,
       title: WEEKDAY_TITLES[index],

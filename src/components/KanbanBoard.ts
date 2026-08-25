@@ -91,6 +91,8 @@ export class KanbanBoard {
   private dateField: DateField;
   /** Date columns for this board, in order. Set in settings. */
   private dateColumns: DateColumnConfig[];
+  /** Whether the date columns lead with the "No date" catch-all. Set in settings. */
+  private noDateColumn: boolean;
   /** Raw card-colour rules for this board, as typed in settings. */
   private cardColors: string;
   /** {@link cardColors} parsed; rebuilt whenever the raw setting changes. */
@@ -120,6 +122,7 @@ export class KanbanBoard {
     this.columnOrder = initial.columnOrder;
     this.dateField = initial.dateField;
     this.dateColumns = initial.dateColumns;
+    this.noDateColumn = initial.noDateColumn;
     this.cardColors = initial.cardColors;
     this.colorRules = this.buildColorRules();
 
@@ -229,6 +232,7 @@ export class KanbanBoard {
       columnOrder: this.columnOrder,
       dateField: this.dateField,
       dateColumns: this.dateColumns,
+      noDateColumn: this.noDateColumn,
       columns: this.columnConfigs,
       metaColumns: this.metaColumns,
       cardColors: this.cardColors,
@@ -246,6 +250,7 @@ export class KanbanBoard {
         this.columnOrder = next.columnOrder;
         this.dateField = next.dateField;
         this.dateColumns = next.dateColumns;
+        this.noDateColumn = next.noDateColumn;
         this.columnConfigs = next.columns;
         this.metaColumns = next.metaColumns;
         this.cardColors = next.cardColors;
@@ -297,6 +302,7 @@ export class KanbanBoard {
       columnOrder: this.columnOrder,
       dateField: this.dateField,
       dateColumns: this.dateColumns,
+      noDateColumn: this.noDateColumn,
       cardColors: this.cardColors,
     });
   }
@@ -385,6 +391,7 @@ export class KanbanBoard {
     this.columnOrder = state.columnOrder;
     this.dateField = state.dateField;
     this.dateColumns = state.dateColumns;
+    this.noDateColumn = state.noDateColumn;
     this.cardColors = state.cardColors;
     this.colorRules = this.buildColorRules();
     this.searchBar.setState({
@@ -436,7 +443,11 @@ export class KanbanBoard {
   /** The columns of the board's own type, without the meta columns. */
   private typeColumnConfigs(): KanbanColumnConfig[] {
     if (this.boardType === "date") {
-      return buildDateColumns(this.dateField, this.dateColumns);
+      return buildDateColumns(
+        this.dateField,
+        this.dateColumns,
+        this.noDateColumn,
+      );
     }
     if (this.boardType === "tag" && this.columnTagPrefix !== "") {
       return buildTagColumns(

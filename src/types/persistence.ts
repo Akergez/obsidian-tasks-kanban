@@ -92,6 +92,17 @@ export interface MetaColumnConfig {
 }
 
 /**
+ * Whether a date board leads with the "No date" catch-all when it does not say.
+ * On, so a board written before the setting existed keeps every column it had.
+ */
+export const DEFAULT_NO_DATE_COLUMN = true;
+
+/** Coerce a persisted catch-all flag; only an explicit `false` turns it off. */
+export function resolveNoDateColumn(raw: unknown): boolean {
+  return raw === false ? false : DEFAULT_NO_DATE_COLUMN;
+}
+
+/**
  * A single saved board: a named view. Its `query` holds only the view's own
  * lines (its slice; filters + sort + group); at render time that is merged on
  * top of the shared base query (see {@link PluginData.baseQuery}).
@@ -143,6 +154,8 @@ export interface PluginData {
   baseDateField: DateField;
   /** Date columns: the days the base-only board shows, in order. */
   baseDateColumns: DateColumnConfig[];
+  /** Date columns: whether the base-only board leads with a "No date" column. */
+  baseNoDateColumn: boolean;
   /** Folded columns for the base-only board. */
   baseCollapsedColumns: string[];
   /** Folded group keys for the base-only board. */
@@ -174,6 +187,7 @@ export const DEFAULT_PLUGIN_DATA: PluginData = {
   baseBoardType: DEFAULT_BOARD_TYPE,
   baseDateField: DEFAULT_DATE_FIELD,
   baseDateColumns: [],
+  baseNoDateColumn: DEFAULT_NO_DATE_COLUMN,
   baseCollapsedColumns: [],
   baseCollapsedGroups: [],
   baseColumns: [],
@@ -226,6 +240,8 @@ export interface BoardOwnState {
   dateField: DateField;
   /** Date columns: the days shown, in order. Owned by settings. */
   dateColumns: DateColumnConfig[];
+  /** Date columns: whether the "No date" catch-all leads them. Owned by settings. */
+  noDateColumn: boolean;
   /** Tag-column prefix; "" ⇒ no tag columns. Owned by settings, never written by a board. */
   columnTagPrefix: string;
   /** Tag-column order; "" ⇒ alphabetical. Owned by settings, never written by a board. */

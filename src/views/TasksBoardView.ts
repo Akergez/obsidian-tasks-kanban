@@ -97,6 +97,7 @@ export class TasksBoardView extends TextFileView {
       columnOrder: this.board.columnOrder,
       dateField: this.board.dateField,
       dateColumns: this.board.dateColumns,
+      noDateColumn: this.board.noDateColumn,
       cardColors: this.board.cardColors,
     };
   }
@@ -123,6 +124,7 @@ export class TasksBoardView extends TextFileView {
       columnOrder: state.columnOrder,
       dateField: state.dateField,
       dateColumns: state.dateColumns,
+      noDateColumn: state.noDateColumn,
       cardColors: state.cardColors,
     };
     this.requestSave();

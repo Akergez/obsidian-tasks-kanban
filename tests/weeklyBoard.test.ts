@@ -143,6 +143,10 @@ describe("buildWeeklyBoard", () => {
     ]);
   });
 
+  it("has no 'No date' column — the pool already holds that work", () => {
+    expect(board.noDateColumn).toBe(false);
+  });
+
   it("writes the pool against whichever date field the planner uses", () => {
     const due = buildWeeklyBoard(day("2026-08-24"), "dueDate");
     expect(due.metaColumns[0].filter).toBe(

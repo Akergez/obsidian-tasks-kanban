@@ -162,7 +162,7 @@ set not done
 clear scheduled date
 ```
 
-Dropping a card into a weekday schedules it for that day; dropping it back into `Unplanned` undoes exactly that — the task stops being done and loses its day.
+Dropping a card into a weekday schedules it for that day; dropping it back into `Unplanned` undoes exactly that — the task stops being done and loses its day. The planner therefore turns the date board's own "No date" column off (a per-board toggle in its settings): the pool already collects that work.
 
 ### Mutation Instructions
 

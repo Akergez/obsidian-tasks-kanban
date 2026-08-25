@@ -13,6 +13,7 @@ import { BOARD_EXTENSION, emptyBoardFile } from "./query/boardFile";
 import {
   DEFAULT_PLUGIN_DATA,
   resolveBoardType,
+  resolveNoDateColumn,
   type BoardOwnState,
   type BoardStatePersistence,
   type LegacyBoardState,
@@ -118,6 +119,7 @@ export default class TasksKanbanPlugin extends Plugin {
         columnOrder: this.data.baseColumnOrder,
         dateField: this.data.baseDateField,
         dateColumns: this.data.baseDateColumns,
+        noDateColumn: this.data.baseNoDateColumn,
         cardColors: this.data.baseCardColors,
       }),
       // The base board owns its whole slice now that a board's settings are
@@ -136,6 +138,7 @@ export default class TasksKanbanPlugin extends Plugin {
           baseColumnOrder: state.columnOrder,
           baseDateField: state.dateField,
           baseDateColumns: state.dateColumns,
+          baseNoDateColumn: state.noDateColumn,
           baseCardColors: state.cardColors,
         };
         return this.saveData(this.data);
@@ -294,6 +297,7 @@ export default class TasksKanbanPlugin extends Plugin {
       baseDateField: resolveDateField(data?.baseDateField),
       baseDateColumns:
         data?.baseDateColumns ?? DEFAULT_PLUGIN_DATA.baseDateColumns,
+      baseNoDateColumn: resolveNoDateColumn(data?.baseNoDateColumn),
       baseCollapsedColumns:
         data?.baseCollapsedColumns ??
         data?.collapsedColumns ??

@@ -98,6 +98,21 @@ describe("taskDate", () => {
   });
 });
 
+describe("buildDateColumns without the catch-all", () => {
+  it("leaves out the No date column when it is turned off", () => {
+    const columns = buildDateColumns(
+      "dueDate",
+      [{ id: "a", title: "Monday", date: "2026-08-24" }],
+      false,
+    );
+    expect(columns.map((c) => c.id)).toEqual(["a"]);
+  });
+
+  it("can end up with no columns at all", () => {
+    expect(buildDateColumns("dueDate", [], false)).toEqual([]);
+  });
+});
+
 describe("buildDateColumns", () => {
   it("leads with the catch-all column for undated tasks", () => {
     const columns = buildDateColumns("dueDate", []);

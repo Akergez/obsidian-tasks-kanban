@@ -114,6 +114,15 @@ describe("round trip", () => {
     expect(roundTrip(input).columns[0].symbols).toEqual([" ", "x"]);
   });
 
+  it("preserves a date board with the catch-all turned off", () => {
+    const input = board({
+      boardType: "date",
+      noDateColumn: false,
+      dateColumns: [{ id: "c1", title: "Monday", date: "2026-08-24" }],
+    });
+    expect(roundTrip(input)).toEqual(input);
+  });
+
   it("preserves meta columns, predicate and mutation alike", () => {
     const input = board({
       metaColumns: [
@@ -189,6 +198,23 @@ describe("parseBoardFile", () => {
 
   it("rejects a document that is not a mapping", () => {
     expect(parseBoardFile("- a\n- b", "Bad").errors).toHaveLength(1);
+  });
+
+  it("keeps the catch-all for a date board that does not mention it", () => {
+    const { board: parsed } = parseBoardFile(
+      ["boardType: date", "dateField: due"].join("\n"),
+      "fallback",
+    );
+    expect(parsed.noDateColumn).toBe(true);
+  });
+
+  it("writes the catch-all flag only when it is off", () => {
+    const on = serializeBoardFile(board({ boardType: "date" }));
+    const off = serializeBoardFile(
+      board({ boardType: "date", noDateColumn: false }),
+    );
+    expect(on).not.toContain("noDateColumn");
+    expect(off).toContain("noDateColumn: false");
   });
 
   it("reads hand-written meta columns", () => {

@@ -1,7 +1,9 @@
 import { parseYaml } from "obsidian";
 import {
   DEFAULT_BOARD_TYPE,
+  DEFAULT_NO_DATE_COLUMN,
   resolveBoardType,
+  resolveNoDateColumn,
   type BoardType,
   type ColumnConfig,
   type DateColumnConfig,
@@ -37,6 +39,8 @@ export interface BoardFile {
   dateField: DateField;
   /** The days a date board shows, in order. */
   dateColumns: DateColumnConfig[];
+  /** Whether a date board leads with the "No date" catch-all column. */
+  noDateColumn: boolean;
   /** Card-spine colour rules, one `<filter> -> <colour>` per line. */
   cardColors: string;
   /** Custom status-symbol columns; empty ⇒ default status columns. */
@@ -59,6 +63,7 @@ export function emptyBoardFile(name: string): BoardFile {
     columnOrder: "",
     dateField: DEFAULT_DATE_FIELD,
     dateColumns: [],
+    noDateColumn: DEFAULT_NO_DATE_COLUMN,
     cardColors: "",
     columns: [],
     metaColumns: [],
@@ -116,6 +121,11 @@ export function serializeBoardFile(board: BoardFile): string {
   }
   if (board.boardType === "date") {
     lines.push(`dateField: ${dateFieldKeyword(board.dateField)}`);
+    // Written only when off: the catch-all is the default, and a file that says
+    // nothing must keep reading as the board it was before the flag existed.
+    if (!board.noDateColumn) {
+      lines.push("noDateColumn: false");
+    }
   }
 
   if (board.query !== "") {
@@ -327,6 +337,7 @@ export function parseBoardFile(
   board.boardType = resolveBoardType(doc.boardType, board.columnTagPrefix);
   board.dateField = resolveDateField(doc.dateField);
   board.dateColumns = asDateColumns(doc.dateColumns);
+  board.noDateColumn = resolveNoDateColumn(doc.noDateColumn);
   board.cardColors = asString(doc.cardColors);
   board.columns = asColumns(doc.columns);
   board.metaColumns = asMetaColumns(doc.metaColumns);

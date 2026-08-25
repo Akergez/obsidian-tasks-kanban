@@ -32,6 +32,7 @@ export interface BoardSettingsDraft {
   columnOrder: string;
   dateField: DateField;
   dateColumns: DateColumnConfig[];
+  noDateColumn: boolean;
   columns: ColumnConfig[];
   metaColumns: MetaColumnConfig[];
   cardColors: string;
@@ -81,8 +82,12 @@ const DATE_FIELD_DESC =
   "day into this field.";
 
 const DATE_COLUMNS_DESC =
-  "One column per exact day. A task whose date matches no column is hidden. " +
-  "Tasks with no date go to 'No date', and dropping a card there clears the field.";
+  "One column per exact day. A task whose date matches no column is hidden.";
+
+const NO_DATE_COLUMN_DESC =
+  "Lead with a 'No date' column holding every task with no date in this field; " +
+  "dropping a card there clears it. Turn it off when a meta column already " +
+  "pools those tasks, as the weekly planner's does.";
 
 const META_COLUMNS_DESC =
   "Columns defined by a filter instead of a single field. A card lands in the " +
@@ -450,6 +455,15 @@ export class BoardSettingsModal extends Modal {
           .onChange((value) => {
             this.draft.dateField = value as DateField;
           });
+      });
+
+    new Setting(containerEl)
+      .setName("No date column")
+      .setDesc(NO_DATE_COLUMN_DESC)
+      .addToggle((toggle) => {
+        toggle.setValue(this.draft.noDateColumn).onChange((value) => {
+          this.draft.noDateColumn = value;
+        });
       });
 
     new Setting(containerEl)

@@ -100,8 +100,9 @@ export function taskDate(task: Task, field: DateField): string {
 }
 
 /**
- * Build a date board's columns: one per configured day, led by the catch-all
- * that collects every task without a date in `field`.
+ * Build a date board's columns: one per configured day, led — unless
+ * `noDateColumn` says otherwise — by the catch-all that collects every task
+ * without a date in `field`.
  *
  * Unlike tag columns, date columns are configured rather than discovered — a
  * board shows exactly the days its user asked for, which is what makes a task
@@ -109,21 +110,28 @@ export function taskDate(task: Task, field: DateField): string {
  * Columns keep their configured order (there is no implicit chronological
  * sort), and a day that cannot be parsed, or repeats one already listed, is
  * dropped: it could neither match a task nor accept a drop unambiguously.
+ *
+ * The catch-all is worth turning off when the board already pools undated
+ * tasks elsewhere — the weekly planner's "Unplanned" meta column collects the
+ * undated work that matters, leaving "No date" holding only finished scraps.
  */
 export function buildDateColumns(
   field: DateField,
   columns: DateColumnConfig[],
+  noDateColumn = true,
 ): KanbanColumnConfig[] {
-  const built: KanbanColumnConfig[] = [
-    {
+  const built: KanbanColumnConfig[] = [];
+
+  if (noDateColumn) {
+    built.push({
       id: NO_DATE_COLUMN_ID,
       title: NO_DATE_COLUMN_TITLE,
       symbols: [],
       dropSymbol: "",
       dateField: field,
       date: "",
-    },
-  ];
+    });
+  }
 
   const seen = new Set<string>();
   for (const column of columns) {
