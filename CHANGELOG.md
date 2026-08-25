@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.20.0...0.20.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* inverse ([17e8385](https://github.com/Akergez/obsidian-tasks-kanban/commit/17e8385f066d6bac838cc154ae679fd161e9b2c3))
+
 ## [0.20.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.19.0...0.20.0) (2026-08-25)
 
 
