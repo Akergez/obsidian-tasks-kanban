@@ -7,6 +7,8 @@ import {
 } from "obsidian";
 
 import { BOARD_ICON, BoardIcons } from "./services/BoardIcons";
+import { collectBoardDiagnostics } from "./services/BoardDiagnostics";
+import { BoardDiagnosticsModal } from "./components/BoardDiagnosticsModal";
 import { BoardNotes } from "./services/BoardNotes";
 import {
   BOARD_VIEW_TYPE,
@@ -95,10 +97,20 @@ export default class TasksKanbanPlugin extends Plugin {
   /** Which notes are boards, for the icons in the explorer and on tabs. */
   private boardNotes: BoardNotes | null = null;
   /**
-   * Leaves the user sent to the markdown editor with "Edit text", and the note
-   * they did it to — so the swap above leaves them there.
+   * The note each leaf was last seen holding.
+   *
+   * A leaf is swapped to the board view only when the file in it **changes**,
+   * which is what separates "this note was just opened" from "the user chose to
+   * look at this note's text". Without that separation, "Edit text" bounced
+   * straight back to the board on the next event.
    */
-  private readonly textLeaves = new Map<string, string>();
+  private readonly seenFiles = new Map<string, string>();
+  /**
+   * The last few decisions the swap above made, for the diagnostics command.
+   * Kept in memory rather than logged: this happens on every file you open, and
+   * a console line each time is noise until something goes wrong.
+   */
+  private readonly swapLog: string[] = [];
 
   /** The base query and base board settings, for the settings tab. */
   getPluginData(): PluginData {
@@ -250,8 +262,6 @@ export default class TasksKanbanPlugin extends Plugin {
       return new TasksBoardView(leaf, tasksIntegration, {
         getBaseQuery: () => this.data.baseQuery,
         getBaseCardColors: () => this.data.baseCardColors,
-        editingText: (editedLeaf, path) =>
-          this.textLeaves.set(leafKey(editedLeaf), path),
       });
     });
 
@@ -327,6 +337,14 @@ export default class TasksKanbanPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "diagnose-boards",
+      name: "Diagnose board detection",
+      callback: () => {
+        void this.diagnose();
+      },
+    });
+
+    this.addCommand({
       id: "open-weekly-template",
       name: "Edit weekly planner template",
       callback: () => {
@@ -371,6 +389,42 @@ export default class TasksKanbanPlugin extends Plugin {
     };
   }
 
+  /** Remember one swap decision, keeping only the recent ones. */
+  private recordSwap(line: string): void {
+    this.swapLog.push(`${new Date().toISOString().slice(11, 19)} ${line}`);
+    if (this.swapLog.length > 20) {
+      this.swapLog.shift();
+    }
+  }
+
+  /**
+   * Show what the plugin sees for the note in front of you.
+   *
+   * Whether a board opens as a board, and what the file explorer's row for it
+   * looks like, only exist inside a running Obsidian — no test here can reach
+   * them. This turns "it still does not work" into a list of facts.
+   */
+  private async diagnose(): Promise<void> {
+    if (!this.boardNotes) {
+      new Notice("Tasks Kanban: the plugin did not finish loading.");
+      return;
+    }
+    const report = await collectBoardDiagnostics(
+      this.app,
+      this.boardNotes,
+      this.manifest.version,
+      BOARD_VIEW_TYPE,
+    );
+    const lines = [
+      ...report.lines,
+      "recent open decisions:",
+      ...(this.swapLog.length === 0
+        ? ["  (none — no note has been opened since the plugin loaded)"]
+        : this.swapLog.map((entry) => `  ${entry}`)),
+    ];
+    new BoardDiagnosticsModal(this.app, lines.join("\n")).open();
+  }
+
   /** Show the note in `leaf` as a board, keeping the same tab. */
   private async showAsBoard(leaf: WorkspaceLeaf): Promise<void> {
     const view = leaf.view;
@@ -378,7 +432,9 @@ export default class TasksKanbanPlugin extends Plugin {
     const state = leaf.getViewState();
     await leaf.setViewState({ ...state, type: BOARD_VIEW_TYPE });
     this.app.workspace.setActiveLeaf(leaf, { focus: true });
-    this.textLeaves.delete(leafKey(leaf));
+    if (path) {
+      this.seenFiles.set(leafKey(leaf), path);
+    }
     if (path) {
       // Shown as a board once ⇒ marked as one in the file explorer, even if the
       // note never declared itself.
@@ -406,13 +462,19 @@ export default class TasksKanbanPlugin extends Plugin {
       }
 
       const key = leafKey(leaf);
-      if (this.textLeaves.get(key) === view.file.path) {
+      const path = view.file.path;
+      if (this.seenFiles.get(key) === path) {
+        // Same note as last time this leaf was looked at: whatever it is
+        // showing, the user put it there. Leave it be.
         continue;
       }
-      this.textLeaves.delete(key);
+      this.seenFiles.set(key, path);
 
-      if (await this.boardNotes?.isBoardFile(view.file)) {
+      const isBoard = await this.boardNotes?.isBoardFile(view.file);
+      this.recordSwap(`${path}: board=${isBoard}`);
+      if (isBoard) {
         await this.showAsBoard(leaf);
+        this.recordSwap(`${path}: swapped to the board view`);
       }
     }
   }
@@ -472,6 +534,6 @@ export default class TasksKanbanPlugin extends Plugin {
     }
     const leaf = this.app.workspace.getLeaf(true);
     await leaf.openFile(file);
-    this.textLeaves.set(leafKey(leaf), path);
+    this.seenFiles.set(leafKey(leaf), path);
   }
 }

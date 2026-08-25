@@ -31,11 +31,6 @@ export interface BoardHost {
   getBaseQuery(): string;
   /** The shared card-colour rules merged into every board. */
   getBaseCardColors(): string;
-  /**
-   * Tell the plugin this leaf was sent to the markdown editor on purpose, so
-   * its own "open boards as boards" rule leaves it there.
-   */
-  editingText?(leaf: WorkspaceLeaf, path: string): void;
 }
 
 /**
@@ -249,9 +244,6 @@ export class TasksBoardView extends TextFileView {
    * The board is one command (or one reopen) away again.
    */
   private async editSource(): Promise<void> {
-    if (this.file) {
-      this.host.editingText?.(this.leaf, this.file.path);
-    }
     const state = this.leaf.getViewState();
     await this.leaf.setViewState({
       ...state,
