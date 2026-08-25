@@ -55,6 +55,25 @@ export type SettingsSlice = Pick<
 >;
 
 /**
+ * A stable key for a leaf. Obsidian gives leaves an id internally; when it does
+ * not, the object itself keys the map just as well for one session.
+ */
+const leafKeys = new WeakMap<object, string>();
+let nextLeafKey = 0;
+function leafKey(leaf: WorkspaceLeaf): string {
+  const id = (leaf as unknown as { id?: string }).id;
+  if (id) {
+    return id;
+  }
+  let key = leafKeys.get(leaf);
+  if (!key) {
+    key = `leaf-${(nextLeafKey += 1)}`;
+    leafKeys.set(leaf, key);
+  }
+  return key;
+}
+
+/**
  * Build a canonical query string from pre-query persisted fields
  * (`selectedTags`, `sortState`). Returns "" when there is nothing to migrate.
  */
@@ -75,6 +94,11 @@ export default class TasksKanbanPlugin extends Plugin {
   private boards: BoardRepository | null = null;
   /** Which notes are boards, for the icons in the explorer and on tabs. */
   private boardNotes: BoardNotes | null = null;
+  /**
+   * Leaves the user sent to the markdown editor with "Edit text", and the note
+   * they did it to — so the swap above leaves them there.
+   */
+  private readonly textLeaves = new Map<string, string>();
 
   /** The base query and base board settings, for the settings tab. */
   getPluginData(): PluginData {
@@ -226,6 +250,8 @@ export default class TasksKanbanPlugin extends Plugin {
       return new TasksBoardView(leaf, tasksIntegration, {
         getBaseQuery: () => this.data.baseQuery,
         getBaseCardColors: () => this.data.baseCardColors,
+        editingText: (editedLeaf, path) =>
+          this.textLeaves.set(leafKey(editedLeaf), path),
       });
     });
 
@@ -233,10 +259,8 @@ export default class TasksKanbanPlugin extends Plugin {
     // note that declares itself a board is handed straight to the board view,
     // which is what makes clicking one in the file explorer open the board.
     this.registerEvent(
-      this.app.workspace.on("file-open", (file) => {
-        if (file) {
-          void this.openAsBoardIfDeclared();
-        }
+      this.app.workspace.on("file-open", () => {
+        void this.swapBoardLeaves();
       }),
     );
 
@@ -350,6 +374,7 @@ export default class TasksKanbanPlugin extends Plugin {
     const state = leaf.getViewState();
     await leaf.setViewState({ ...state, type: BOARD_VIEW_TYPE });
     this.app.workspace.setActiveLeaf(leaf, { focus: true });
+    this.textLeaves.delete(leafKey(leaf));
     if (path) {
       // Shown as a board once ⇒ marked as one in the file explorer, even if the
       // note never declared itself.
@@ -358,22 +383,44 @@ export default class TasksKanbanPlugin extends Plugin {
   }
 
   /**
-   * Hand the active note to the board view when it declares itself a board.
-   * A note that carries a board block but declares nothing stays in the editor
-   * until asked — "Open as board" is one command, and one file-menu item, away.
+   * Hand any note holding a board to the board view — this is what makes
+   * clicking one in the file explorer open the board rather than its text.
+   *
+   * Every markdown leaf is checked, not just the active one: `file-open` says
+   * nothing about which leaf it happened in, and guessing was the other half of
+   * the planner opening as a page of YAML.
+   *
+   * A leaf the user sent to the editor with "Edit text" is left alone until it
+   * shows something else, or the button would bounce straight back to the
+   * board.
    */
-  private async openAsBoardIfDeclared(): Promise<void> {
-    const leaf = this.app.workspace.getMostRecentLeaf();
-    const view = leaf?.view;
-    if (!leaf || !(view instanceof MarkdownView) || !view.file) {
-      return;
-    }
-    if (this.boardNotes?.isBoard(view.file.path)) {
-      await this.showAsBoard(leaf);
+  private async swapBoardLeaves(): Promise<void> {
+    for (const leaf of this.app.workspace.getLeavesOfType(MARKDOWN_VIEW_TYPE)) {
+      const view = leaf.view;
+      if (!(view instanceof MarkdownView) || !view.file) {
+        continue;
+      }
+
+      const key = leafKey(leaf);
+      if (this.textLeaves.get(key) === view.file.path) {
+        continue;
+      }
+      this.textLeaves.delete(key);
+
+      if (await this.boardNotes?.isBoardFile(view.file)) {
+        await this.showAsBoard(leaf);
+      }
     }
   }
 
-  /** Open a board note, focusing it if it is already open. */
+  /**
+   * Open a board note **as a board**, focusing it if it is already open.
+   *
+   * The view is set directly rather than by opening the file and waiting for
+   * the swap below to notice: a note the plugin has just written is not in the
+   * metadata cache yet, and a planner that opened as a page of YAML is exactly
+   * what that race looks like.
+   */
   async openBoard(path: string): Promise<void> {
     const existing = [
       ...this.app.workspace.getLeavesOfType(BOARD_VIEW_TYPE),
@@ -386,7 +433,12 @@ export default class TasksKanbanPlugin extends Plugin {
           : null;
       return file?.path === path;
     });
+
     if (existing) {
+      if (existing.view instanceof MarkdownView) {
+        await this.showAsBoard(existing);
+        return;
+      }
       this.app.workspace.setActiveLeaf(existing, { focus: true });
       return;
     }
@@ -396,6 +448,26 @@ export default class TasksKanbanPlugin extends Plugin {
       new Notice(`Tasks Kanban: no board at ${path}`);
       return;
     }
-    await this.app.workspace.getLeaf(true).openFile(file);
+
+    const leaf = this.app.workspace.getLeaf(true);
+    await leaf.setViewState({
+      type: BOARD_VIEW_TYPE,
+      active: true,
+      state: { file: path },
+    });
+    this.app.workspace.setActiveLeaf(leaf, { focus: true });
+    this.boardNotes?.remember(path);
+  }
+
+  /** Open a board note as plain text, for editing it by hand. */
+  async openBoardAsText(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      new Notice(`Tasks Kanban: no note at ${path}`);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf(true);
+    await leaf.openFile(file);
+    this.textLeaves.set(leafKey(leaf), path);
   }
 }

@@ -1,4 +1,4 @@
-import { TextFileView, type WorkspaceLeaf } from "obsidian";
+import { Notice, TextFileView, type WorkspaceLeaf } from "obsidian";
 
 import { TasksIntegration, type Task } from "../services/TasksIntegration";
 import { KanbanBoard } from "../components/KanbanBoard";
@@ -31,6 +31,11 @@ export interface BoardHost {
   getBaseQuery(): string;
   /** The shared card-colour rules merged into every board. */
   getBaseCardColors(): string;
+  /**
+   * Tell the plugin this leaf was sent to the markdown editor on purpose, so
+   * its own "open boards as boards" rule leaves it there.
+   */
+  editingText?(leaf: WorkspaceLeaf, path: string): void;
 }
 
 /**
@@ -181,6 +186,7 @@ export class TasksBoardView extends TextFileView {
     // pick up the new document rather than keep the previous board's query.
     this.kanbanBoard?.reloadQueryFromPersistence();
     this.refresh();
+    this.warnIfBoardless();
   }
 
   clear(): void {
@@ -213,6 +219,16 @@ export class TasksBoardView extends TextFileView {
     this.refresh();
   }
 
+  /** Warn once when a note opened as a board has no block to read. */
+  private warnIfBoardless(): void {
+    if (this.board || !this.file) {
+      return;
+    }
+    new Notice(
+      `Tasks Kanban: ${this.file.basename} has no \`\`\`tasks-kanban block yet.`,
+    );
+  }
+
   async onClose() {
     this.contentEl.empty();
 
@@ -233,6 +249,9 @@ export class TasksBoardView extends TextFileView {
    * The board is one command (or one reopen) away again.
    */
   private async editSource(): Promise<void> {
+    if (this.file) {
+      this.host.editingText?.(this.leaf, this.file.path);
+    }
     const state = this.leaf.getViewState();
     await this.leaf.setViewState({
       ...state,

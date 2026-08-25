@@ -1,4 +1,5 @@
-import type { App } from "obsidian";
+import { TFile, type App } from "obsidian";
+import { findBoardBlock } from "../query/markdownBoard";
 
 /**
  * The frontmatter key a note declares itself a board with.
@@ -33,7 +34,14 @@ export class BoardNotes {
     this.app = app;
   }
 
-  /** Whether the note at `path` is a board. */
+  /**
+   * Whether the note at `path` is a board, answered without touching the disk:
+   * for the file explorer, which asks about every visible row on every redraw.
+   *
+   * Says no for a note the metadata cache has not caught up with yet — which is
+   * exactly the case right after the plugin writes one, and why opening a board
+   * never goes through here (see {@link isBoardFile}).
+   */
   isBoard(path: string): boolean {
     if (this.rendered.has(path)) {
       return true;
@@ -42,7 +50,33 @@ export class BoardNotes {
     return frontmatter?.[BOARD_FRONTMATTER_KEY] === true;
   }
 
-  /** Record that a board rendered from `path`; notifies when that is news. */
+  /**
+   * Whether `file` is a board, reading it if it must.
+   *
+   * The authority, and what deciding to *open* a board goes through: the
+   * metadata cache lags a file that was just written, so a freshly created
+   * planner would otherwise open as a plain note. Reading is cached by Obsidian
+   * and happens once per file opened, which is nothing.
+   *
+   * A note counts when it declares itself in frontmatter **or** simply carries
+   * a board block — a block someone pasted in is a board too.
+   */
+  async isBoardFile(file: TFile): Promise<boolean> {
+    if (this.isBoard(file.path)) {
+      return true;
+    }
+    if (!(file instanceof TFile) || file.extension !== "md") {
+      return false;
+    }
+    const content = await this.app.vault.cachedRead(file);
+    const isBoard = findBoardBlock(content) !== null;
+    if (isBoard) {
+      this.remember(file.path);
+    }
+    return isBoard;
+  }
+
+  /** Record that a board was opened from `path`; notifies when that is news. */
   remember(path: string): void {
     if (this.rendered.has(path)) {
       return;
