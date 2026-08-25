@@ -912,41 +912,18 @@
     width: auto;
 }
 
-/* Board notes in the file explorer.
-   Obsidian offers no API for a file's icon in the explorer, so the plugin marks
-   the row (see services/BoardIcons) and the icon is drawn here: the same lucide
-   "columns" glyph the board's tab carries, as a mask so it takes the theme's
-   own text colour and dims with the row like any other.
-
-   Whatever icon the row already had is hidden first: the board icon stands in
-   for a board note's file icon rather than joining it. The selectors cover
-   Obsidian's own icon element and the ones themes and icon plugins add. */
-.nav-file-title[data-tasks-kanban="true"] > .tree-item-icon,
-.nav-file-title[data-tasks-kanban="true"] > .nav-file-icon,
-.nav-file-title[data-tasks-kanban="true"] > .obsidian-icon-folder-icon,
-.nav-file-title[data-tasks-kanban="true"] .tree-item-inner > .obsidian-icon-folder-icon {
-    display: none;
+/* The board badge in the file explorer.
+   It is a `nav-file-tag`, the element Obsidian already puts on a row, so the
+   theme's own sizing and colour apply; only the icon inside it needs saying. */
+.tasks-kanban-file-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 2px;
 }
 
-.nav-file-title[data-tasks-kanban="true"] .tree-item-inner::before {
-    content: "";
-    display: inline-block;
-    width: 0.95em;
-    height: 0.95em;
-    margin-right: 0.4em;
-    vertical-align: -0.14em;
-    background-color: currentColor;
-    opacity: 0.75;
-    -webkit-mask-image: var(--tasks-kanban-board-icon);
-    mask-image: var(--tasks-kanban-board-icon);
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-size: contain;
-    mask-size: contain;
-}
-
-body {
-    --tasks-kanban-board-icon: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='18' x='3' y='3' rx='2'/%3E%3Cpath d='M9 3v18'/%3E%3Cpath d='M15 3v18'/%3E%3C/svg%3E");
+.tasks-kanban-file-tag .svg-icon {
+    width: 0.9em;
+    height: 0.9em;
 }
 
 /* Diagnostics report: monospace, scrollable, selectable — it exists to be

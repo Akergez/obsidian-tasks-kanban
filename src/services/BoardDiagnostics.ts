@@ -1,6 +1,7 @@
 import { MarkdownView, TFile, type App } from "obsidian";
 
 import { findBoardBlock } from "../query/markdownBoard";
+import { boardViewFailures, TasksBoardView } from "../views/TasksBoardView";
 import type { BoardNotes } from "./BoardNotes";
 
 /**
@@ -19,6 +20,11 @@ export interface BoardDiagnosticsReport {
   lines: string[];
   /** A one-line summary, short enough for a Notice. */
   summary: string;
+}
+
+/** A leaf's id, when Obsidian gives one. */
+function leafId(leaf: unknown): string {
+  return (leaf as { id?: string }).id ?? "?";
 }
 
 /** Cut a long string down for a log line, saying how much was left out. */
@@ -55,13 +61,39 @@ export async function collectBoardDiagnostics(
     const view = leaf.view;
     const path = view instanceof MarkdownView ? view.file?.path : undefined;
     lines.push(
-      `  leaf ${(leaf as unknown as { id?: string }).id ?? "?"}: ` +
-        `type=${leaf.getViewState().type} file=${path ?? "—"}`,
+      `  leaf ${leafId(leaf)}: type=${leaf.getViewState().type} file=${path ?? "—"}`,
     );
   }
-  lines.push(
-    `board leaves open: ${app.workspace.getLeavesOfType(boardViewType).length}`,
-  );
+  const boardLeaves = app.workspace.getLeavesOfType(boardViewType);
+  lines.push(`board leaves open: ${boardLeaves.length}`);
+  for (const leaf of boardLeaves) {
+    const view = leaf.view;
+    if (!(view instanceof TasksBoardView)) {
+      lines.push(`  leaf ${leafId(leaf)}: view is not a board view (?)`);
+      continue;
+    }
+    const el = view.contentEl;
+    lines.push(
+      `  leaf ${leafId(leaf)}: file=${view.file?.path ?? "—"} ` +
+        `block=${view.hasBoard()} built=${view.isRendered()}`,
+    );
+    lines.push(
+      `    size: ${Math.round(el.clientWidth)}×${Math.round(el.clientHeight)} ` +
+        `boardEl=${el.querySelector(".tasks-kanban-board") !== null} ` +
+        `columns=${el.querySelectorAll(".tasks-kanban-column").length} ` +
+        `cards=${el.querySelectorAll(".tasks-kanban-card").length}`,
+    );
+    lines.push(`    html: ${clip(el.innerHTML, 300)}`);
+  }
+
+  if (boardViewFailures.length > 0) {
+    lines.push("board view failures:");
+    for (const failure of boardViewFailures) {
+      lines.push(`  ${clip(failure, 500)}`);
+    }
+  } else {
+    lines.push("board view failures: none recorded");
+  }
 
   const file = app.workspace.getActiveFile();
   if (!(file instanceof TFile)) {
@@ -94,6 +126,9 @@ export async function collectBoardDiagnostics(
   if (row) {
     lines.push(
       `  explorer row marked: ${row.hasAttribute("data-tasks-kanban")}`,
+    );
+    lines.push(
+      `  board badge present: ${row.querySelector(".tasks-kanban-file-tag") !== null}`,
     );
     lines.push(`  explorer row HTML: ${clip(row.outerHTML)}`);
   } else {

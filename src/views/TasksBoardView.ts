@@ -22,6 +22,25 @@ import type {
 
 export const BOARD_VIEW_TYPE = "tasks-board";
 
+/**
+ * The last few failures inside a board view, kept for the diagnostics command.
+ *
+ * A throw in `onOpen` or `setViewData` leaves Obsidian with an empty tab and no
+ * explanation anywhere the user can reach — which is exactly the "it does not
+ * render" this is here to explain.
+ */
+export const boardViewFailures: string[] = [];
+
+/** Record a failure, keeping only the recent ones. */
+function recordFailure(where: string, error: unknown): void {
+  const detail =
+    error instanceof Error ? error.stack || error.message : String(error);
+  boardViewFailures.push(`${where}: ${detail}`);
+  if (boardViewFailures.length > 5) {
+    boardViewFailures.shift();
+  }
+}
+
 /** Obsidian's own view type for a note, which is what "Edit text" swaps to. */
 export const MARKDOWN_VIEW_TYPE = "markdown";
 
@@ -31,6 +50,11 @@ export interface BoardHost {
   getBaseQuery(): string;
   /** The shared card-colour rules merged into every board. */
   getBaseCardColors(): string;
+  /**
+   * Tell the plugin this note was sent to the markdown editor on purpose, so
+   * boards-open-as-boards leaves it there until asked otherwise.
+   */
+  editingText?(path: string): void;
 }
 
 /**
@@ -169,6 +193,15 @@ export class TasksBoardView extends TextFileView {
   }
 
   setViewData(data: string, clear: boolean): void {
+    try {
+      this.readViewData(data, clear);
+    } catch (error) {
+      recordFailure("setViewData", error);
+      throw error;
+    }
+  }
+
+  private readViewData(data: string, clear: boolean): void {
     this.data = data;
     const fallback = this.file ? boardNameFromPath(this.file.path) : "Board";
     const block = findBoardBlock(data);
@@ -190,6 +223,15 @@ export class TasksBoardView extends TextFileView {
   }
 
   async onOpen() {
+    try {
+      await this.build();
+    } catch (error) {
+      recordFailure("onOpen", error);
+      throw error;
+    }
+  }
+
+  private async build() {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("tasks-kanban-view");
@@ -244,6 +286,9 @@ export class TasksBoardView extends TextFileView {
    * The board is one command (or one reopen) away again.
    */
   private async editSource(): Promise<void> {
+    if (this.file) {
+      this.host.editingText?.(this.file.path);
+    }
     const state = this.leaf.getViewState();
     await this.leaf.setViewState({
       ...state,
@@ -266,5 +311,10 @@ export class TasksBoardView extends TextFileView {
   /** Whether this note holds a board block at all. */
   hasBoard(): boolean {
     return this.board !== null;
+  }
+
+  /** Whether the board component was built; for the diagnostics command. */
+  isRendered(): boolean {
+    return this.kanbanBoard !== null;
   }
 }

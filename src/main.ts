@@ -1,13 +1,8 @@
-import {
-  MarkdownView,
-  Notice,
-  Plugin,
-  TFile,
-  type WorkspaceLeaf,
-} from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidian";
 
 import { BOARD_ICON, BoardIcons } from "./services/BoardIcons";
 import { collectBoardDiagnostics } from "./services/BoardDiagnostics";
+import { patchLeafViewMode } from "./services/leafViewMode";
 import { BoardDiagnosticsModal } from "./components/BoardDiagnosticsModal";
 import { BoardNotes } from "./services/BoardNotes";
 import {
@@ -111,6 +106,11 @@ export default class TasksKanbanPlugin extends Plugin {
    * a console line each time is noise until something goes wrong.
    */
   private readonly swapLog: string[] = [];
+  /**
+   * Notes the user asked to see as text ("Edit text"), so the interception
+   * below leaves them in the editor until they ask for the board again.
+   */
+  private readonly textFiles = new Set<string>();
 
   /** The base query and base board settings, for the settings tab. */
   getPluginData(): PluginData {
@@ -262,12 +262,29 @@ export default class TasksKanbanPlugin extends Plugin {
       return new TasksBoardView(leaf, tasksIntegration, {
         getBaseQuery: () => this.data.baseQuery,
         getBaseCardColors: () => this.data.baseCardColors,
+        editingText: (path) => this.textFiles.add(path),
       });
     });
 
-    // A board is a note, so Obsidian opens it in the markdown editor first; a
-    // note that declares itself a board is handed straight to the board view,
-    // which is what makes clicking one in the file explorer open the board.
+    // Boards open as boards by changing the view type on the way in, before
+    // the view is built. Reacting to `file-open` afterwards does not work:
+    // Obsidian finishes its own open and the note lands in the editor anyway.
+    this.register(
+      patchLeafViewMode({
+        proto: WorkspaceLeaf.prototype,
+        markdownViewType: MARKDOWN_VIEW_TYPE,
+        boardViewType: BOARD_VIEW_TYPE,
+        shouldOpenAsBoard: (path) => this.boardNotes?.isBoard(path) === true,
+        isTextPreferred: (path) => this.textFiles.has(path),
+        onOpenedAsBoard: (path) =>
+          this.recordSwap(`${path}: opened as a board`),
+      }),
+    );
+
+    // Second chance for a note that carries a board block but declares nothing
+    // in its frontmatter: the rule above cannot read files (it has to answer
+    // synchronously), so the first open of such a note lands in the editor and
+    // this swaps it, remembering the note so the next open goes straight in.
     this.registerEvent(
       this.app.workspace.on("file-open", () => {
         this.swapBoardLeaves().catch((error) => {
@@ -434,11 +451,14 @@ export default class TasksKanbanPlugin extends Plugin {
     this.app.workspace.setActiveLeaf(leaf, { focus: true });
     if (path) {
       this.seenFiles.set(leafKey(leaf), path);
-    }
-    if (path) {
-      // Shown as a board once ⇒ marked as one in the file explorer, even if the
-      // note never declared itself.
-      this.boardNotes?.remember(path);
+      this.textFiles.delete(path);
+
+      // Shown as a board on purpose ⇒ the note says so from now on, in the
+      // note itself, so it opens as one after a restart too.
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file instanceof TFile) {
+        await this.boardNotes?.declare(file);
+      }
     }
   }
 
@@ -461,8 +481,12 @@ export default class TasksKanbanPlugin extends Plugin {
         continue;
       }
 
-      const key = leafKey(leaf);
       const path = view.file.path;
+      if (this.textFiles.has(path)) {
+        continue;
+      }
+
+      const key = leafKey(leaf);
       if (this.seenFiles.get(key) === path) {
         // Same note as last time this leaf was looked at: whatever it is
         // showing, the user put it there. Leave it be.
@@ -515,6 +539,7 @@ export default class TasksKanbanPlugin extends Plugin {
       return;
     }
 
+    this.textFiles.delete(path);
     const leaf = this.app.workspace.getLeaf(true);
     await leaf.setViewState({
       type: BOARD_VIEW_TYPE,
@@ -532,6 +557,7 @@ export default class TasksKanbanPlugin extends Plugin {
       new Notice(`Tasks Kanban: no note at ${path}`);
       return;
     }
+    this.textFiles.add(path);
     const leaf = this.app.workspace.getLeaf(true);
     await leaf.openFile(file);
     this.seenFiles.set(leafKey(leaf), path);

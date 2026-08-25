@@ -12,8 +12,15 @@ import { BOARD_FRONTMATTER_KEY, findBoardBlock } from "../query/markdownBoard";
  */
 export class BoardNotes {
   private readonly app: App;
-  /** Paths a board block has rendered from since the plugin loaded. */
-  private readonly rendered = new Set<string>();
+  /**
+   * Notes known to hold a board this session.
+   *
+   * Only a cache in front of the declaration in the file: a note recognised by
+   * its content has one written into it (see {@link declare}), so this set is
+   * how the answer is known between recognising the note and the metadata cache
+   * catching up — not a registry the plugin keeps on the side.
+   */
+  private readonly known = new Set<string>();
   private readonly listeners = new Set<() => void>();
 
   constructor(app: App) {
@@ -29,7 +36,7 @@ export class BoardNotes {
    * never goes through here (see {@link isBoardFile}).
    */
   isBoard(path: string): boolean {
-    if (this.rendered.has(path)) {
+    if (this.known.has(path)) {
       return true;
     }
     const frontmatter = this.app.metadataCache.getCache(path)?.frontmatter;
@@ -57,20 +64,45 @@ export class BoardNotes {
     const content = await this.app.vault.cachedRead(file);
     const isBoard = findBoardBlock(content) !== null;
     if (isBoard) {
-      this.remember(file.path);
+      // Recognised by its content: say so in the file, once, so nothing has to
+      // read it again to know.
+      await this.declare(file);
     }
     return isBoard;
   }
 
   /** Record that a board was opened from `path`; notifies when that is news. */
   remember(path: string): void {
-    if (this.rendered.has(path)) {
+    if (this.known.has(path)) {
       return;
     }
-    this.rendered.add(path);
+    this.known.add(path);
     for (const listener of this.listeners) {
       listener();
     }
+  }
+
+  /**
+   * Write the declaration into the note itself, so it opens as a board from now
+   * on — including after a restart, and including on another device.
+   *
+   * The note is where this belongs: a list of paths kept in the plugin's own
+   * data would be a second copy of what the file can say for itself, and would
+   * go stale the moment the file is moved by anything but Obsidian.
+   * `processFrontMatter` edits the frontmatter and nothing else.
+   */
+  async declare(file: TFile): Promise<void> {
+    this.remember(file.path);
+    if (
+      this.app.metadataCache.getCache(file.path)?.frontmatter?.[
+        BOARD_FRONTMATTER_KEY
+      ] === true
+    ) {
+      return;
+    }
+    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+      frontmatter[BOARD_FRONTMATTER_KEY] = true;
+    });
   }
 
   /** Subscribe to changes in what counts as a board. Returns an unsubscribe. */

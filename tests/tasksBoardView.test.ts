@@ -17,6 +17,11 @@ const NOTE = [
   "boardType: date",
   "dateField: scheduled",
   "",
+  "dateColumns:",
+  "  - id: date:2026-08-24",
+  "    title: Monday",
+  '    date: "2026-08-24"',
+  "",
   "collapsedColumns: []",
   "collapsedGroups: []",
   "```",
@@ -71,6 +76,50 @@ function state(overrides: Partial<BoardOwnState> = {}): BoardOwnState {
     ...overrides,
   };
 }
+
+describe("TasksBoardView: rendering", () => {
+  /** Drive the view the way Obsidian does: open it, then hand it the file. */
+  async function opened(note = NOTE) {
+    const { instance, patched } = view(note);
+    const contentEl = document.createElement("div");
+    (instance as unknown as { contentEl: HTMLElement }).contentEl = contentEl;
+
+    await instance.onOpen();
+    instance.setViewData(note, true);
+    return { instance, contentEl, patched };
+  }
+
+  it("builds the board into the view's content element", async () => {
+    const { contentEl } = await opened();
+    expect(contentEl.querySelector(".tasks-kanban-board")).not.toBeNull();
+  });
+
+  it("renders the columns the block asks for", async () => {
+    const { contentEl } = await opened();
+    const titles = Array.from(
+      contentEl.querySelectorAll(".tasks-kanban-column-title"),
+    ).map((el) => el.textContent);
+    expect(titles).toContain("Monday");
+  });
+
+  it("survives the file arriving before the view finished opening", async () => {
+    // Obsidian may hand over the file while onOpen is still awaiting, which is
+    // how a board ends up built but never filled.
+    const { instance, patched } = view();
+    const contentEl = document.createElement("div");
+    (instance as unknown as { contentEl: HTMLElement }).contentEl = contentEl;
+
+    const opening = instance.onOpen();
+    instance.setViewData(NOTE, true);
+    await opening;
+
+    expect(contentEl.querySelector(".tasks-kanban-board")).not.toBeNull();
+    expect(
+      contentEl.querySelectorAll(".tasks-kanban-column").length,
+    ).toBeGreaterThan(0);
+    expect(patched.requestSave).not.toHaveBeenCalled();
+  });
+});
 
 describe("TasksBoardView: the note behind the board", () => {
   it("reads the board out of the note's block", () => {

@@ -20,17 +20,31 @@ function file(path: string): TFile {
 /** BoardNotes over a vault of `contents`, keyed by path. */
 function notes(
   contents: Record<string, string>,
-  frontmatter: Record<string, unknown> = {},
+  frontmatter: Record<string, Record<string, unknown>> = {},
 ) {
   const cachedRead = vi.fn(async (f: TFile) => contents[f.path] ?? "");
+  /** What the plugin writes into a note's frontmatter, recorded per path. */
+  const processFrontMatter = vi.fn(
+    async (f: TFile, edit: (fm: Record<string, unknown>) => void) => {
+      const existing = frontmatter[f.path] ?? {};
+      edit(existing);
+      frontmatter[f.path] = existing;
+    },
+  );
   const app = {
     vault: { cachedRead },
+    fileManager: { processFrontMatter },
     metadataCache: {
       getCache: (path: string) =>
         frontmatter[path] ? { frontmatter: frontmatter[path] } : null,
     },
   };
-  return { boards: new BoardNotes(app as never), cachedRead };
+  return {
+    boards: new BoardNotes(app as never),
+    cachedRead,
+    processFrontMatter,
+    frontmatter,
+  };
 }
 
 describe("BoardNotes.isBoardFile", () => {
@@ -72,6 +86,34 @@ describe("BoardNotes.isBoardFile", () => {
     expect(boards.isBoard("Kanban/Sprint.md")).toBe(true);
     await boards.isBoardFile(file("Kanban/Sprint.md"));
     expect(cachedRead).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes the declaration into the note it recognised", async () => {
+    // So the answer lives in the file, not in a list the plugin keeps beside it:
+    // it survives a restart, a sync, and a move done outside Obsidian.
+    const pasted = "# Notes\n\n```tasks-kanban\nboardType: tag\n```\n";
+    const { boards, frontmatter } = notes({ "Notes.md": pasted });
+
+    await boards.isBoardFile(file("Notes.md"));
+
+    expect(frontmatter["Notes.md"]).toEqual({ "tasks-kanban": true });
+  });
+
+  it("does not rewrite a note that already declares itself", async () => {
+    const { boards, processFrontMatter } = notes(
+      { "Kanban/Sprint.md": BOARD_NOTE },
+      { "Kanban/Sprint.md": { "tasks-kanban": true } },
+    );
+
+    await boards.declare(file("Kanban/Sprint.md"));
+
+    expect(processFrontMatter).not.toHaveBeenCalled();
+  });
+
+  it("leaves an ordinary note's frontmatter alone", async () => {
+    const { boards, processFrontMatter } = notes({ "Notes.md": PLAIN_NOTE });
+    await boards.isBoardFile(file("Notes.md"));
+    expect(processFrontMatter).not.toHaveBeenCalled();
   });
 });
 
