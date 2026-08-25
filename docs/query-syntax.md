@@ -154,7 +154,7 @@ A card is shown in the first column that collects it, and meta columns come firs
 ```
 # filter
 not done
-(no scheduled date) OR (scheduled before today)
+(no scheduled date) OR (scheduled before 2026-08-24)
 ```
 ```
 # mutation
@@ -162,7 +162,7 @@ set not done
 clear scheduled date
 ```
 
-Dropping a card into a weekday schedules it for that day; dropping it back into `Unplanned` undoes exactly that — the task stops being done and loses its day. The planner therefore turns the date board's own "No date" column off (a per-board toggle in its settings): the pool already collects that work.
+The day in the filter is that week's Monday — the pool holds what falls outside the week being planned, so a card left unfinished on Monday still sits on Monday come Thursday. Dropping a card into a weekday schedules it for that day; dropping it back into `Unplanned` undoes exactly that — the task stops being done and loses its day. The planner therefore turns the date board's own "No date" column off (a per-board toggle in its settings): the pool already collects that work.
 
 ### Mutation Instructions
 

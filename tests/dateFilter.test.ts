@@ -1,3 +1,4 @@
+import { taskDate } from "../src/utils/dateColumns";
 import { describe, it, expect } from "vitest";
 import {
   parseDateFilter,
@@ -345,6 +346,65 @@ describe("matchesDateFilter", () => {
 
     const pastTask = createTask({ startDate: "2026-07-01" });
     expect(matchesDateFilter(pastTask, filter!, referenceDate)).toBe(true);
+  });
+});
+
+describe("matchesDateFilter: how a task's date value is read", () => {
+  /** A moment-like value: local day 25th, whose UTC instant is still the 24th. */
+  const momentOn25th = {
+    format: (fmt: string) => (fmt === "YYYY-MM-DD" ? "2026-08-25" : ""),
+    toISOString: () => "2026-08-24T21:00:00.000Z",
+  };
+  const today = new Date(2026, 7, 25);
+
+  it("is not before today when it is today (moment from a zone east of UTC)", () => {
+    const filter = parseDateFilter("scheduled before today");
+    expect(
+      matchesDateFilter(
+        { scheduledDate: momentOn25th } as never,
+        filter!,
+        today,
+      ),
+    ).toBe(false);
+  });
+
+  it("is on today, by the same reading", () => {
+    const filter = parseDateFilter("scheduled on today");
+    expect(
+      matchesDateFilter(
+        { scheduledDate: momentOn25th } as never,
+        filter!,
+        today,
+      ),
+    ).toBe(true);
+  });
+
+  it("reads a Date by its local day, not its UTC one", () => {
+    const filter = parseDateFilter("scheduled before today");
+    expect(
+      matchesDateFilter(
+        { scheduledDate: new Date(2026, 7, 25) } as never,
+        filter!,
+        today,
+      ),
+    ).toBe(false);
+  });
+
+  it("still counts a genuinely earlier day as before today", () => {
+    const filter = parseDateFilter("scheduled before today");
+    expect(
+      matchesDateFilter(
+        { scheduledDate: new Date(2026, 7, 24) } as never,
+        filter!,
+        today,
+      ),
+    ).toBe(true);
+  });
+
+  it("agrees with the day a date column collects on", () => {
+    expect(
+      taskDate({ scheduledDate: momentOn25th } as never, "scheduledDate"),
+    ).toBe("2026-08-25");
   });
 });
 

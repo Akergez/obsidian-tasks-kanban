@@ -75,24 +75,33 @@ export const UNPLANNED_COLUMN_TITLE = "Unplanned";
 export const UNPLANNED_COLUMN_ID = "meta:unplanned";
 
 /**
- * The planner's meta column: everything still to do that the week has not
- * caught — unfinished work with no day, or with a day already gone.
+ * The planner's meta column: everything still to do that this week has not
+ * caught — unfinished work with no day, or with a day older than the week.
+ *
+ * The threshold is the week's own Monday, not today: a board that planned the
+ * whole week would otherwise empty its earlier days as the week went on,
+ * pulling Monday's unfinished card out of Monday on Tuesday. The week is the
+ * unit being planned, so the week is what the pool is outside of.
  *
  * Its mutation is the exact undoing of a drop into a weekday: the task stops
  * being done and loses its day, so dragging a card back out of the week returns
- * it to the pool it came from rather than leaving it dated in the past.
+ * it to the pool rather than leaving it dated in a week gone by.
  *
  * Both are written in the board's own language against the board's own date
  * field, so a planner built on `due` reads and writes due dates.
  */
-export function unplannedColumn(dateField: DateField): MetaColumnConfig {
+export function unplannedColumn(
+  monday: Date,
+  dateField: DateField,
+): MetaColumnConfig {
   const keyword = DATE_FIELD_TO_KEYWORD[dateField];
+  const weekStart = todayISO(monday);
   return {
     id: UNPLANNED_COLUMN_ID,
     title: UNPLANNED_COLUMN_TITLE,
     filter: [
       "not done",
-      `(no ${keyword} date) OR (${keyword} before today)`,
+      `(no ${keyword} date) OR (${keyword} before ${weekStart})`,
     ].join("\n"),
     mutation: ["set not done", `clear ${keyword} date`].join("\n"),
   };
@@ -117,7 +126,7 @@ export function buildWeeklyBoard(
     ...emptyBoardFile(isoWeekName(monday)),
     boardType: "date",
     dateField,
-    metaColumns: [unplannedColumn(dateField)],
+    metaColumns: [unplannedColumn(monday, dateField)],
     // The pool already holds the undated work worth seeing, so a "No date"
     // column would add nothing but finished leftovers.
     noDateColumn: false,

@@ -137,10 +137,17 @@ describe("buildWeeklyBoard", () => {
       {
         id: "meta:unplanned",
         title: "Unplanned",
-        filter: "not done\n(no scheduled date) OR (scheduled before today)",
+        filter:
+          "not done\n(no scheduled date) OR (scheduled before 2026-08-24)",
         mutation: "set not done\nclear scheduled date",
       },
     ]);
+  });
+
+  it("pools against the week's own Monday, not against today", () => {
+    // Otherwise the planner would empty its own earlier days as the week ran on.
+    const next = buildWeeklyBoard(day("2026-08-31"), "scheduledDate");
+    expect(next.metaColumns[0].filter).toContain("scheduled before 2026-08-31");
   });
 
   it("has no 'No date' column — the pool already holds that work", () => {
@@ -150,7 +157,7 @@ describe("buildWeeklyBoard", () => {
   it("writes the pool against whichever date field the planner uses", () => {
     const due = buildWeeklyBoard(day("2026-08-24"), "dueDate");
     expect(due.metaColumns[0].filter).toBe(
-      "not done\n(no due date) OR (due before today)",
+      "not done\n(no due date) OR (due before 2026-08-24)",
     );
     expect(due.metaColumns[0].mutation).toBe("set not done\nclear due date");
   });

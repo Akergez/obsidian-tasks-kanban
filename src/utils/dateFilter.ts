@@ -1,4 +1,5 @@
 import type { Task } from "../services/TasksIntegration";
+import { formatDate } from "./taskChips";
 
 /**
  * Date fields that can be filtered on, matching the Tasks plugin's date fields.
@@ -225,60 +226,17 @@ export function matchesDateFilter(
 }
 
 /**
- * Normalize a date string to YYYY-MM-DD format.
- * Handles various formats including ISO strings with time components.
+ * The day a task's date value means, as `YYYY-MM-DD`.
+ *
+ * Delegates to {@link formatDate}, which is also what the date *columns* use:
+ * one normaliser, so a filter and a column can never disagree about which day
+ * a task is on. That matters most for the Date and Moment values the Tasks
+ * cache hands over — read through `toISOString()` they would be the UTC day,
+ * which is the day before in every zone east of UTC, and a task scheduled today
+ * would come out "before today".
  */
 function normalizeDateString(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  // Handle Date objects by converting to ISO string first
-  if (value instanceof Date) {
-    // Convert Date to ISO string, then extract just the date part
-    try {
-      const iso = value.toISOString();
-      return iso.slice(0, 10);
-    } catch {
-      return null;
-    }
-  }
-
-  if (typeof value !== "string") {
-    // For Moment-like objects, try toISOString first
-    if (
-      typeof value === "object" &&
-      value &&
-      typeof (value as { toISOString?: () => string }).toISOString ===
-        "function"
-    ) {
-      try {
-        const iso = (value as { toISOString: () => string }).toISOString();
-        return typeof iso === "string" ? iso.slice(0, 10) : null;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  const trimmed = value.trim();
-
-  // Already in YYYY-MM-DD format
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return trimmed;
-  }
-
-  // Try to parse as a date
-  try {
-    const date = new Date(trimmed);
-    if (Number.isNaN(date.getTime())) {
-      return null;
-    }
-    return toLocalISODate(date);
-  } catch {
-    return null;
-  }
+  return formatDate(value);
 }
 
 /**
