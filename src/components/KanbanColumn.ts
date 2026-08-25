@@ -213,6 +213,17 @@ export class KanbanColumn {
         return;
       }
 
+      if (this.config.mutation !== undefined) {
+        // Meta columns: move the task by making the column's own statement
+        // true of it — whatever its mutation says (a column with an empty
+        // mutation collects but does not move anything).
+        void this.tasksIntegration.taskUpdater.applyMutation(
+          task,
+          this.config.mutation,
+        );
+        return;
+      }
+
       if (this.config.dateField !== undefined) {
         // Date columns: move the task by writing the column's day into the
         // board's date field (the catch-all column, with no day, clears it).

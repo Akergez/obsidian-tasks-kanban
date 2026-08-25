@@ -1044,6 +1044,62 @@ describe("TaskUpdater", () => {
     });
   });
 
+  describe("applyMutation", () => {
+    beforeEach(() => {
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockTasksIntegration.getStatusBySymbol.mockImplementation(
+        (symbol: string) =>
+          symbol === "x"
+            ? DONE_STATUS
+            : symbol === " "
+              ? TODO_STATUS
+              : undefined,
+      );
+      mockTasksIntegration.getStatuses = vi
+        .fn()
+        .mockReturnValue([TODO_STATUS, DONE_STATUS]);
+    });
+
+    it("applies every instruction in one write", async () => {
+      const task = createTask("x", 1);
+      mockApp.vault.read.mockResolvedValue(
+        "# Notes\n- [x] Test task ⏳ 2026-08-20 ✅ 2026-08-24\n- [ ] Other",
+      );
+
+      const result = await taskUpdater.applyMutation(task, [
+        { kind: "status-done", done: false },
+        { kind: "clear-date", field: "scheduledDate" },
+      ]);
+
+      expect(result).toBe(true);
+      expect(mockApp.vault.modify).toHaveBeenCalledTimes(1);
+      expect(mockApp.vault.modify).toHaveBeenCalledWith(
+        mockFile,
+        "# Notes\n- [ ] Test task\n- [ ] Other",
+      );
+    });
+
+    it("writes nothing for an empty mutation", async () => {
+      const task = createTask(" ", 1);
+      const result = await taskUpdater.applyMutation(task, []);
+
+      expect(result).toBe(false);
+      expect(mockApp.vault.modify).not.toHaveBeenCalled();
+    });
+
+    it("returns false when the line is not a task", async () => {
+      const task = createTask(" ", 0);
+      mockApp.vault.read.mockResolvedValue("# Notes\n- [ ] Test task");
+
+      const result = await taskUpdater.applyMutation(task, [
+        { kind: "status-done", done: true },
+      ]);
+
+      expect(result).toBe(false);
+      expect(mockApp.vault.modify).not.toHaveBeenCalled();
+    });
+  });
+
   describe("updateTaskColumnTag", () => {
     beforeEach(() => {
       mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);

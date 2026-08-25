@@ -492,9 +492,15 @@ function isDateInCurrentYear(taskDate: string, referenceDate: Date): boolean {
 
 /**
  * Serialize a date filter instruction back to a query line.
+ *
+ * `has` and `no` lead the line in Tasks' own spelling (`no due date`), unlike
+ * every other operator, which sits between the field and its value.
  */
 export function serializeDateFilter(filter: DateFilterInstruction): string {
   // Use the stored keyword if available, otherwise fall back to the default
   const keyword = filter.keyword || DATE_FIELD_TO_KEYWORD[filter.field];
+  if (filter.operator === "has" || filter.operator === "no") {
+    return `${filter.operator} ${keyword} ${filter.value}`.trimEnd();
+  }
   return `${keyword} ${filter.operator} ${filter.value}`;
 }

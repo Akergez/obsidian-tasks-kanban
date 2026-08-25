@@ -114,6 +114,26 @@ describe("round trip", () => {
     expect(roundTrip(input).columns[0].symbols).toEqual([" ", "x"]);
   });
 
+  it("preserves meta columns, predicate and mutation alike", () => {
+    const input = board({
+      metaColumns: [
+        {
+          id: "meta:unplanned",
+          title: "Unplanned",
+          filter: "not done\n(no scheduled date) OR (scheduled before today)",
+          mutation: "set not done\nclear scheduled date",
+        },
+        {
+          id: "meta:blocked",
+          title: "Blocked",
+          filter: "tag includes #blocked",
+          mutation: "",
+        },
+      ],
+    });
+    expect(roundTrip(input)).toEqual(input);
+  });
+
   it("preserves a date board", () => {
     const input = board({
       name: "This week",
@@ -169,6 +189,52 @@ describe("parseBoardFile", () => {
 
   it("rejects a document that is not a mapping", () => {
     expect(parseBoardFile("- a\n- b", "Bad").errors).toHaveLength(1);
+  });
+
+  it("reads hand-written meta columns", () => {
+    const { board: parsed, errors } = parseBoardFile(
+      [
+        "name: Planner",
+        "boardType: date",
+        "metaColumns:",
+        "  - id: meta:unplanned",
+        "    title: Unplanned",
+        "    filter: |-",
+        "      not done",
+        "      (no scheduled date) OR (scheduled before today)",
+        "    mutation: |-",
+        "      set not done",
+        "      clear scheduled date",
+      ].join("\n"),
+      "fallback",
+    );
+    expect(errors).toEqual([]);
+    expect(parsed.metaColumns).toEqual([
+      {
+        id: "meta:unplanned",
+        title: "Unplanned",
+        filter: "not done\n(no scheduled date) OR (scheduled before today)",
+        mutation: "set not done\nclear scheduled date",
+      },
+    ]);
+  });
+
+  it("drops a meta column with no filter, which could collect nothing", () => {
+    const { board: parsed } = parseBoardFile(
+      [
+        "metaColumns:",
+        "  - id: meta:empty",
+        "    title: Everything",
+        "    mutation: set done",
+      ].join("\n"),
+      "fallback",
+    );
+    expect(parsed.metaColumns).toEqual([]);
+  });
+
+  it("reports a metaColumns key that is not a list", () => {
+    const { errors } = parseBoardFile("metaColumns: nope", "fallback");
+    expect(errors).toEqual(["`metaColumns` must be a list; ignoring it."]);
   });
 
   it("drops columns with no symbols, which could not render", () => {

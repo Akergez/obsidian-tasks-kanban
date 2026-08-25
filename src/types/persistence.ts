@@ -66,6 +66,32 @@ export interface DateColumnConfig {
 }
 
 /**
+ * A **meta column**: a column defined by what it means rather than by one field
+ * of the task.
+ *
+ * Where a status, tag or date column collects on a single value, a meta column
+ * carries a *predicate* — filter lines in the board query language — and a
+ * *mutation* — instructions in its imperative twin (see utils/taskMutation),
+ * applied to a card dropped into it. The two are independent on purpose: a
+ * column can gather "unplanned work" and, when something is dragged back in,
+ * do whatever makes it unplanned again.
+ *
+ * Meta columns are added to whatever columns the board's type produces, and
+ * come first — a task is shown in the first column that collects it, so a meta
+ * column takes priority over the catch-all it overlaps with.
+ */
+export interface MetaColumnConfig {
+  /** Stable identifier (crypto.randomUUID()); also the column-fold key. */
+  id: string;
+  /** Display name shown in the column header. */
+  title: string;
+  /** Filter lines a task must satisfy to land here; empty ⇒ the column is dropped. */
+  filter: string;
+  /** Mutation lines applied to a task dropped in; empty ⇒ a drop does nothing. */
+  mutation: string;
+}
+
+/**
  * A single saved board: a named view. Its `query` holds only the view's own
  * lines (its slice; filters + sort + group); at render time that is merged on
  * top of the shared base query (see {@link PluginData.baseQuery}).
@@ -123,6 +149,8 @@ export interface PluginData {
   baseCollapsedGroups: string[];
   /** Custom columns for the base-only board; empty ⇒ default status columns. */
   baseColumns: ColumnConfig[];
+  /** Meta columns for the base-only board, shown before its type's columns. */
+  baseMetaColumns: MetaColumnConfig[];
   /** Tag-column prefix for the base-only board; "" ⇒ status columns. */
   baseColumnTagPrefix: string;
   /** Tag-column order for the base-only board; "" ⇒ alphabetical. */
@@ -149,6 +177,7 @@ export const DEFAULT_PLUGIN_DATA: PluginData = {
   baseCollapsedColumns: [],
   baseCollapsedGroups: [],
   baseColumns: [],
+  baseMetaColumns: [],
   baseColumnTagPrefix: "",
   baseColumnOrder: "",
   baseCardColors: "",
@@ -191,6 +220,8 @@ export interface BoardOwnState {
   collapsedGroups: string[];
   /** Custom columns; empty ⇒ default status columns. */
   columns: ColumnConfig[];
+  /** Meta columns, shown before the type's columns. Owned by settings. */
+  metaColumns: MetaColumnConfig[];
   /** Date columns: the field their days apply to. Owned by settings. */
   dateField: DateField;
   /** Date columns: the days shown, in order. Owned by settings. */

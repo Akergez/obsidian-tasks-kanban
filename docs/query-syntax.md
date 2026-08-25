@@ -21,6 +21,20 @@ Each instruction should be on its own line. Blank lines are ignored.
 | `filename (includes\|does not include) <text>` | Case-insensitive substring of the file name | `filename includes Alpha` |
 | `folder (includes\|does not include) <text>` | Case-insensitive substring of the containing folder | `folder includes Projects` |
 | `<path\|filename\|folder> (regex matches\|regex does not match) /<pattern>/` | Regex match (case-sensitive unless the `i` flag is given) | `path regex matches /^Work/i` |
+| `<date field> (before\|after\|on) <day>` | Compare a date field against a day | `scheduled before today` |
+| `<date field> in <period>` | The date falls in a period | `due in this week` |
+| `(has\|no) <date field> date` | The task has, or has not, a date in that field | `no scheduled date` |
+| `(<filter>) (AND\|OR\|XOR) (<filter>)` | Combine filters; every sub-filter is parenthesised and the operator is capitalised | `(no due date) OR (due before today)` |
+| `NOT (<filter>)` | Negate a filter | `NOT (tag includes #someday)` |
+
+#### Date Fields and Days
+
+Date fields are `due`, `scheduled`, `start`, `created`, `done`, `cancelled` (the plural spellings Tasks accepts — `starts`, `dues` — work too). A day is `YYYY-MM-DD` or `today` / `tomorrow` / `yesterday`; a period is `this|next|last week`, `this|next|last month`, or `this year`.
+
+#### Combining Filters
+
+The operators must be capitals, and each sub-filter must be in its own parentheses — the same shape the Tasks reference uses, and what keeps a lowercase "or" inside `description includes cats or dogs` ordinary text. `NOT` binds tightest, then `AND`, then `XOR`, then `OR`; parenthesise to say otherwise.
+
 
 #### File Location Fields
 
@@ -107,6 +121,12 @@ sort by priority reverse
 group by priority
 ```
 
+### Everything unfinished that is not planned ahead
+```
+not done
+(no scheduled date) OR (scheduled before today)
+```
+
 ### Complete example
 ```
 tag includes #work
@@ -125,15 +145,46 @@ group by priority
 - Sort instructions are applied after filtering; grouping is applied last
 - Only the last `sort by` / `group by` instruction is used if multiple are provided
 
+## Meta Columns
+
+A board's columns normally come from one field — a status, a column tag, a day. A **meta column** is defined by what it means instead: a *filter*, in the language above, and a *mutation* saying what a card dropped into it becomes. Both are edited in the board's settings (the gear button on the board), and any board type can carry them.
+
+A card is shown in the first column that collects it, and meta columns come first — so a meta column wins over any column it overlaps. The weekly planner ships with one, the `Unplanned` pool:
+
+```
+# filter
+not done
+(no scheduled date) OR (scheduled before today)
+```
+```
+# mutation
+set not done
+clear scheduled date
+```
+
+Dropping a card into a weekday schedules it for that day; dropping it back into `Unplanned` undoes exactly that — the task stops being done and loses its day.
+
+### Mutation Instructions
+
+Each instruction is the imperative form of the filter it makes true. One per line, applied in order.
+
+| Instruction | Effect | Example |
+|-------------|--------|---------|
+| `set done` | Give the task the vault's first `DONE` status (and its done date) | `set done` |
+| `set not done` | Give it the vault's first `TODO` status, dropping the done date | `set not done` |
+| `set status <symbol>` | Write an exact status symbol; `[ ]` spells the space one | `set status /` |
+| `set <date field> <day>` | Write that day into the field | `set scheduled today` |
+| `clear <date field> date` | Remove that date | `clear due date` |
+| `add tag #<tag>` | Add the tag if the task does not carry it | `add tag #next` |
+| `remove tag #<tag>` | Remove the tag | `remove tag #waiting` |
+
+Date fields and days are spelled as in the filter language. A meta column with no mutation still collects — it is then a read-only pool, and dropping into it does nothing.
+
 ## Unsupported Tasks Query Syntax
 
 The following Tasks query instructions are **not** supported and will be reported as errors:
 
 - `priority is <value>` (use `sort by priority` for sorting)
-- `due on` / `due before` / `due after` (date filtering)
-- `scheduled on` / `scheduled before` / `scheduled after`
-- `start on` / `start before` / `start after`
-- `created on` / `created before` / `created after`
 - `recurring` / `not recurring`
 - `status.symbol` filters (Tasks has no built-in one either)
 - `group by <date field>` (e.g. `group by due`) — date grouping scatters the board; only `status`, `priority`, `tags`, `path`, `folder`, `filename` are supported

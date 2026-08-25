@@ -1,6 +1,7 @@
 import { emptyBoardFile, type BoardFile } from "../query/boardFile";
-import type { DateField } from "./dateFilter";
+import { DATE_FIELD_TO_KEYWORD, type DateField } from "./dateFilter";
 import { todayISO } from "./dateColumns";
+import type { MetaColumnConfig } from "../types/persistence";
 
 /** Column titles for the seven days, Monday first. */
 export const WEEKDAY_TITLES = [
@@ -67,9 +68,40 @@ export function weekDays(monday: Date): string[] {
   );
 }
 
+/** Title of the planner's meta column, the pool the week is planned out of. */
+export const UNPLANNED_COLUMN_TITLE = "Unplanned";
+
+/** Id of that column; derived from its meaning, like the day columns' ids. */
+export const UNPLANNED_COLUMN_ID = "meta:unplanned";
+
+/**
+ * The planner's meta column: everything still to do that the week has not
+ * caught — unfinished work with no day, or with a day already gone.
+ *
+ * Its mutation is the exact undoing of a drop into a weekday: the task stops
+ * being done and loses its day, so dragging a card back out of the week returns
+ * it to the pool it came from rather than leaving it dated in the past.
+ *
+ * Both are written in the board's own language against the board's own date
+ * field, so a planner built on `due` reads and writes due dates.
+ */
+export function unplannedColumn(dateField: DateField): MetaColumnConfig {
+  const keyword = DATE_FIELD_TO_KEYWORD[dateField];
+  return {
+    id: UNPLANNED_COLUMN_ID,
+    title: UNPLANNED_COLUMN_TITLE,
+    filter: [
+      "not done",
+      `(no ${keyword} date) OR (${keyword} before today)`,
+    ].join("\n"),
+    mutation: ["set not done", `clear ${keyword} date`].join("\n"),
+  };
+}
+
 /**
  * Build the weekly planner for the week starting at `monday`: a date board with
- * one column per weekday, named after the ISO week.
+ * one column per weekday, led by the {@link unplannedColumn} pool, named after
+ * the ISO week.
  *
  * Column ids are derived from the day rather than random, so the file is a pure
  * function of the week — regenerating it would produce the same document, and a
@@ -84,6 +116,7 @@ export function buildWeeklyBoard(
     ...emptyBoardFile(isoWeekName(monday)),
     boardType: "date",
     dateField,
+    metaColumns: [unplannedColumn(dateField)],
     dateColumns: days.map((date, index) => ({
       id: `date:${date}`,
       title: WEEKDAY_TITLES[index],

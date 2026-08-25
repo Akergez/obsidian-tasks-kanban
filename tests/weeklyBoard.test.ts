@@ -132,6 +132,25 @@ describe("buildWeeklyBoard", () => {
     );
   });
 
+  it("leads with the unplanned pool, filtered on the board's own field", () => {
+    expect(board.metaColumns).toEqual([
+      {
+        id: "meta:unplanned",
+        title: "Unplanned",
+        filter: "not done\n(no scheduled date) OR (scheduled before today)",
+        mutation: "set not done\nclear scheduled date",
+      },
+    ]);
+  });
+
+  it("writes the pool against whichever date field the planner uses", () => {
+    const due = buildWeeklyBoard(day("2026-08-24"), "dueDate");
+    expect(due.metaColumns[0].filter).toBe(
+      "not done\n(no due date) OR (due before today)",
+    );
+    expect(due.metaColumns[0].mutation).toBe("set not done\nclear due date");
+  });
+
   it("round-trips through the board file format", () => {
     const { board: parsed, errors } = parseBoardFile(
       serializeBoardFile(board),

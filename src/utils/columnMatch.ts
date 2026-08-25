@@ -1,26 +1,32 @@
+import { taskMatchesFilters } from "../query/boardQuery";
 import type { Task } from "../services/TasksIntegration";
 import { taskDate } from "./dateColumns";
 import type { KanbanColumnConfig } from "./statusColumns";
 import { columnPartsOf } from "./tagColumns";
 
 /**
- * Whether `column` collects `task` — the single matcher for all three board
- * types, so a lane's distribution and a column's drop handler can never
+ * Whether `column` collects `task` — the single matcher for every kind of
+ * column, so a lane's distribution and a column's drop handler can never
  * disagree about where a card belongs.
  *
  * Which mode applies is read off the column itself (see
- * {@link KanbanColumnConfig}): date columns match on the task's value for the
- * board's date field, tag columns on its column tag, status columns on its
- * status symbol. In both tag and date mode the catch-all column (an empty
- * `tag`/`date`) takes every task that has none.
+ * {@link KanbanColumnConfig}): meta columns match on their own filters, date
+ * columns on the task's value for the board's date field, tag columns on its
+ * column tag, status columns on its status symbol. In both tag and date mode
+ * the catch-all column (an empty `tag`/`date`) takes every task that has none.
  *
- * A task that no column collects is simply not rendered. On a date board that
- * is the point: a task dated outside every configured day is hidden.
+ * Columns may overlap once a board has meta columns, so a task is rendered in
+ * the *first* column that collects it (see KanbanLane.updateTasks). A task no
+ * column collects is not rendered at all. On a date board that is the point: a
+ * task dated outside every configured day is hidden.
  */
 export function columnCollects(
   column: KanbanColumnConfig,
   task: Task,
 ): boolean {
+  if (column.filters !== undefined) {
+    return taskMatchesFilters(task, column.filters);
+  }
   if (column.dateField !== undefined) {
     const value = taskDate(task, column.dateField);
     return column.date === "" ? value === "" : value === column.date;

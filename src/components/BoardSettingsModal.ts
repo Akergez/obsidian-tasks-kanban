@@ -2,11 +2,13 @@ import { App, Modal, Setting } from "obsidian";
 
 import { parseQuery } from "../query/boardQuery";
 import { parseColorRules } from "../utils/cardColors";
+import { metaColumnErrors } from "../utils/metaColumns";
 import type { StatusInfo } from "../services/TasksIntegration";
 import type {
   BoardType,
   ColumnConfig,
   DateColumnConfig,
+  MetaColumnConfig,
 } from "../types/persistence";
 import {
   DATE_FIELDS,
@@ -31,6 +33,7 @@ export interface BoardSettingsDraft {
   dateField: DateField;
   dateColumns: DateColumnConfig[];
   columns: ColumnConfig[];
+  metaColumns: MetaColumnConfig[];
   cardColors: string;
 }
 
@@ -80,6 +83,20 @@ const DATE_FIELD_DESC =
 const DATE_COLUMNS_DESC =
   "One column per exact day. A task whose date matches no column is hidden. " +
   "Tasks with no date go to 'No date', and dropping a card there clears the field.";
+
+const META_COLUMNS_DESC =
+  "Columns defined by a filter instead of a single field. A card lands in the " +
+  "first column that collects it, and meta columns come first — so they win " +
+  "over the column they overlap. Dropping a card in applies the mutation.";
+
+const META_FILTER_PLACEHOLDER = [
+  "not done",
+  "(no scheduled date) OR (scheduled before today)",
+].join("\n");
+
+const META_MUTATION_PLACEHOLDER = ["set not done", "clear scheduled date"].join(
+  "\n",
+);
 
 const CARD_COLORS_DESC =
   "One rule per line: a filter, then '->', then a CSS colour. The first matching " +
@@ -154,6 +171,7 @@ export class BoardSettingsModal extends Modal {
       ...draft,
       dateColumns: draft.dateColumns.map((c) => ({ ...c })),
       columns: draft.columns.map((c) => ({ ...c, symbols: [...c.symbols] })),
+      metaColumns: draft.metaColumns.map((c) => ({ ...c })),
     };
     this.statuses = statuses;
     this.onSubmit = onSubmit;
@@ -208,6 +226,9 @@ export class BoardSettingsModal extends Modal {
       dateColumns: this.draft.dateColumns
         .map((c) => ({ ...c, date: c.date.trim() }))
         .filter((c) => isValidColumnDate(c.date)),
+      // A meta column with no usable filter could collect nothing; Save is
+      // blocked on it, so this only guards against an empty leftover row.
+      metaColumns: this.draft.metaColumns.filter((c) => c.filter.trim() !== ""),
     };
   }
 
@@ -216,6 +237,7 @@ export class BoardSettingsModal extends Modal {
     this.bodyEl.empty();
     this.renderQueryField(this.bodyEl);
     this.renderBoardType(this.bodyEl);
+    this.renderMetaColumnFields(this.bodyEl);
     this.renderCardColorsField(this.bodyEl);
   }
 
@@ -244,6 +266,90 @@ export class BoardSettingsModal extends Modal {
       cls: "tasks-kanban-settings-errors",
     });
     this.validate("query", parseQuery(this.draft.query).errors, errorEl);
+  }
+
+  /**
+   * Meta columns: any number of them, on any board type. Each is a title, a
+   * predicate (filter lines) and a mutation (what a drop writes).
+   */
+  private renderMetaColumnFields(containerEl: HTMLElement): void {
+    new Setting(containerEl)
+      .setName("Meta columns")
+      .setDesc(META_COLUMNS_DESC)
+      .addButton((button) => {
+        button.setButtonText("Add meta column").onClick(() => {
+          this.draft.metaColumns = [
+            ...this.draft.metaColumns,
+            { id: newColumnId(), title: "", filter: "", mutation: "" },
+          ];
+          this.render();
+        });
+      });
+
+    const errorEl = containerEl.createDiv({
+      cls: "tasks-kanban-settings-errors",
+    });
+
+    for (const column of this.draft.metaColumns) {
+      new Setting(containerEl)
+        .setClass("tasks-kanban-setting-column")
+        .addText((text) => {
+          text
+            .setPlaceholder("Column name")
+            .setValue(column.title)
+            .onChange((value) => {
+              column.title = value;
+            });
+        })
+        .addExtraButton((button) => {
+          button
+            .setIcon("trash")
+            .setTooltip("Delete column")
+            .onClick(() => {
+              this.draft.metaColumns = this.draft.metaColumns.filter(
+                (c) => c.id !== column.id,
+              );
+              this.render();
+            });
+        });
+
+      new Setting(containerEl)
+        .setClass("tasks-kanban-setting-query")
+        .setName("Filter")
+        .setDesc("Which tasks this column collects. One filter per line.")
+        .addTextArea((textArea) => {
+          textArea.inputEl.rows = 3;
+          textArea.inputEl.spellcheck = false;
+          textArea.inputEl.placeholder = META_FILTER_PLACEHOLDER;
+          textArea.setValue(column.filter);
+          textArea.onChange((value) => {
+            column.filter = value;
+            this.validateMetaColumns(errorEl);
+          });
+        });
+
+      new Setting(containerEl)
+        .setClass("tasks-kanban-setting-query")
+        .setName("Mutation")
+        .setDesc("What a card dropped here becomes. One instruction per line.")
+        .addTextArea((textArea) => {
+          textArea.inputEl.rows = 3;
+          textArea.inputEl.spellcheck = false;
+          textArea.inputEl.placeholder = META_MUTATION_PLACEHOLDER;
+          textArea.setValue(column.mutation);
+          textArea.onChange((value) => {
+            column.mutation = value;
+            this.validateMetaColumns(errorEl);
+          });
+        });
+    }
+
+    this.validateMetaColumns(errorEl);
+  }
+
+  /** Reject a meta column that could not collect, or a line neither parser reads. */
+  private validateMetaColumns(errorEl: HTMLElement): void {
+    this.validate("meta", metaColumnErrors(this.draft.metaColumns), errorEl);
   }
 
   private renderCardColorsField(containerEl: HTMLElement): void {

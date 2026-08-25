@@ -5,6 +5,7 @@ import {
   type BoardType,
   type ColumnConfig,
   type DateColumnConfig,
+  type MetaColumnConfig,
 } from "../types/persistence";
 import {
   dateFieldKeyword,
@@ -40,6 +41,8 @@ export interface BoardFile {
   cardColors: string;
   /** Custom status-symbol columns; empty ⇒ default status columns. */
   columns: ColumnConfig[];
+  /** Meta columns (predicate + mutation), shown before the type's columns. */
+  metaColumns: MetaColumnConfig[];
   /** Column ids currently folded. */
   collapsedColumns: string[];
   /** Group keys (swimlane keys) currently folded. */
@@ -58,6 +61,7 @@ export function emptyBoardFile(name: string): BoardFile {
     dateColumns: [],
     cardColors: "",
     columns: [],
+    metaColumns: [],
     collapsedColumns: [],
     collapsedGroups: [],
   };
@@ -68,12 +72,12 @@ export function emptyBoardFile(name: string): BoardFile {
  * rules stay readable and hand-editable rather than collapsing into an escaped
  * one-liner. `|-` strips the trailing newline, keeping round-trips exact.
  */
-function blockScalar(key: string, value: string): string {
+function blockScalar(key: string, value: string, indent = ""): string {
   const body = value
     .split("\n")
-    .map((line) => (line === "" ? "" : `  ${line}`))
+    .map((line) => (line === "" ? "" : `${indent}  ${line}`))
     .join("\n");
-  return `${key}: |-\n${body}`;
+  return `${indent}${key}: |-\n${body}`;
 }
 
 /** Quote a scalar only when YAML would otherwise misread it. */
@@ -129,6 +133,20 @@ export function serializeBoardFile(board: BoardFile): string {
       lines.push(
         `    symbols: [${column.symbols.map((s) => JSON.stringify(s)).join(", ")}]`,
       );
+    }
+  }
+
+  if (board.metaColumns.length > 0) {
+    lines.push("", "metaColumns:");
+    for (const column of board.metaColumns) {
+      lines.push(`  - id: ${scalar(column.id)}`);
+      lines.push(`    title: ${scalar(column.title)}`);
+      // Block scalars again, and for the same reason as the query: a predicate
+      // and a mutation are multi-line programs, and stay readable as such.
+      lines.push(blockScalar("filter", column.filter, "    "));
+      if (column.mutation !== "") {
+        lines.push(blockScalar("mutation", column.mutation, "    "));
+      }
     }
   }
 
@@ -211,6 +229,34 @@ function asDateColumns(value: unknown): DateColumnConfig[] {
   return columns;
 }
 
+/**
+ * Coerce the `metaColumns:` block. An entry with no filter is dropped: it could
+ * collect nothing, and an empty predicate would otherwise read as "everything".
+ */
+function asMetaColumns(value: unknown): MetaColumnConfig[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const columns: MetaColumnConfig[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "object" || raw === null) {
+      continue;
+    }
+    const entry = raw as Record<string, unknown>;
+    const filter = asString(entry.filter).trim();
+    if (filter === "") {
+      continue;
+    }
+    columns.push({
+      id: asString(entry.id) || crypto.randomUUID(),
+      title: asString(entry.title),
+      filter,
+      mutation: asString(entry.mutation).trim(),
+    });
+  }
+  return columns;
+}
+
 /** Coerce the `columns:` block, dropping entries that could not render. */
 function asColumns(value: unknown): ColumnConfig[] {
   if (!Array.isArray(value)) {
@@ -283,6 +329,7 @@ export function parseBoardFile(
   board.dateColumns = asDateColumns(doc.dateColumns);
   board.cardColors = asString(doc.cardColors);
   board.columns = asColumns(doc.columns);
+  board.metaColumns = asMetaColumns(doc.metaColumns);
   board.collapsedColumns = asStringList(doc.collapsedColumns);
   board.collapsedGroups = asStringList(doc.collapsedGroups);
 
@@ -292,6 +339,10 @@ export function parseBoardFile(
 
   if (doc.dateColumns !== undefined && !Array.isArray(doc.dateColumns)) {
     errors.push("`dateColumns` must be a list; ignoring it.");
+  }
+
+  if (doc.metaColumns !== undefined && !Array.isArray(doc.metaColumns)) {
+    errors.push("`metaColumns` must be a list; ignoring it.");
   }
 
   return { board, errors };

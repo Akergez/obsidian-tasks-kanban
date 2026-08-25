@@ -15,6 +15,7 @@ import { resolveColumns } from "../utils/statusColumns";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
 import { buildTagColumns, parseColumnOrder } from "../utils/tagColumns";
 import { buildDateColumns } from "../utils/dateColumns";
+import { buildMetaColumns } from "../utils/metaColumns";
 import type { DateField } from "../utils/dateFilter";
 import { parseColorRules, type ColorRule } from "../utils/cardColors";
 import { nestTasks, type SubTask } from "../utils/taskHierarchy";
@@ -42,6 +43,7 @@ import type {
   BoardType,
   ColumnConfig,
   DateColumnConfig,
+  MetaColumnConfig,
 } from "../types/persistence";
 
 export type { KanbanColumnConfig } from "../utils/statusColumns";
@@ -79,6 +81,8 @@ export class KanbanBoard {
   private boardType: BoardType;
   /** Custom columns for this board; empty ⇒ default status columns. */
   private columnConfigs: ColumnConfig[];
+  /** Meta columns for this board, rendered before the type's columns. */
+  private metaColumns: MetaColumnConfig[];
   /** Tag-column prefix for this board. Set in settings. */
   private columnTagPrefix: string;
   /** Tag-column order for this board; "" ⇒ alphabetical. Set in settings. */
@@ -111,6 +115,7 @@ export class KanbanBoard {
     this.collapsedGroups = new Set(initial.collapsedGroups);
     this.boardType = initial.boardType;
     this.columnConfigs = initial.columns;
+    this.metaColumns = initial.metaColumns;
     this.columnTagPrefix = initial.columnTagPrefix;
     this.columnOrder = initial.columnOrder;
     this.dateField = initial.dateField;
@@ -225,6 +230,7 @@ export class KanbanBoard {
       dateField: this.dateField,
       dateColumns: this.dateColumns,
       columns: this.columnConfigs,
+      metaColumns: this.metaColumns,
       cardColors: this.cardColors,
     };
 
@@ -241,6 +247,7 @@ export class KanbanBoard {
         this.dateField = next.dateField;
         this.dateColumns = next.dateColumns;
         this.columnConfigs = next.columns;
+        this.metaColumns = next.metaColumns;
         this.cardColors = next.cardColors;
         this.colorRules = this.buildColorRules();
         this.searchBar.setState({
@@ -285,6 +292,7 @@ export class KanbanBoard {
       collapsedColumns: [...this.collapsedColumns],
       collapsedGroups: [...this.collapsedGroups],
       columns: this.columnConfigs,
+      metaColumns: this.metaColumns,
       columnTagPrefix: this.columnTagPrefix,
       columnOrder: this.columnOrder,
       dateField: this.dateField,
@@ -372,6 +380,7 @@ export class KanbanBoard {
     this.collapsedGroups = new Set(state.collapsedGroups);
     this.boardType = state.boardType;
     this.columnConfigs = state.columns;
+    this.metaColumns = state.metaColumns;
     this.columnTagPrefix = state.columnTagPrefix;
     this.columnOrder = state.columnOrder;
     this.dateField = state.dateField;
@@ -406,8 +415,14 @@ export class KanbanBoard {
   }
 
   /**
-   * The columns to render, chosen by the board's declared type rather than by
-   * which optional field happens to be filled in.
+   * The columns to render: this board's meta columns, then the columns its
+   * declared type produces (chosen by that type rather than by which optional
+   * field happens to be filled in).
+   *
+   * Meta columns come first because a task goes to the first column that
+   * collects it (see KanbanLane.updateTasks): a meta column may overlap the
+   * type's columns — the weekly planner's "Unplanned" pool overlaps "No date" —
+   * and leading means it wins that overlap.
    *
    * Tag columns are discovered from every task the board holds — not from the
    * filtered ones — so a column doesn't vanish the moment a filter empties it.
@@ -415,6 +430,11 @@ export class KanbanBoard {
    * falls back to status columns until one is configured.
    */
   private resolveColumnConfigs(): KanbanColumnConfig[] {
+    return [...buildMetaColumns(this.metaColumns), ...this.typeColumnConfigs()];
+  }
+
+  /** The columns of the board's own type, without the meta columns. */
+  private typeColumnConfigs(): KanbanColumnConfig[] {
     if (this.boardType === "date") {
       return buildDateColumns(this.dateField, this.dateColumns);
     }
@@ -444,7 +464,9 @@ export class KanbanBoard {
     const columnSignature = columnConfigs
       .map(
         (c) =>
-          `${c.id}:${c.title}:${c.symbols.join("")}:${c.tag ?? ""}:${c.date ?? ""}`,
+          `${c.id}:${c.title}:${c.symbols.join("")}:${c.tag ?? ""}:${c.date ?? ""}:${
+            c.filters ? JSON.stringify(c.filters) : ""
+          }`,
       )
       .join("|");
     const keys = groups.map((g) => `${columnSignature}#${g.key}`);

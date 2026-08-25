@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { KanbanColumn } from "../src/components/KanbanColumn";
 import type { KanbanColumnConfig } from "../src/utils/statusColumns";
 import type { Task } from "../src/services/TasksIntegration";
+import { buildMetaColumns } from "../src/utils/metaColumns";
 
 // Minimal DataTransfer polyfill for JSDom (which lacks it).
 class StubDataTransfer {
@@ -97,6 +98,7 @@ function mockIntegration(tasks: Task[]) {
     updateTaskStatus: vi.fn().mockResolvedValue(true),
     updateTaskColumnTag: vi.fn().mockResolvedValue(true),
     updateTaskDate: vi.fn().mockResolvedValue(true),
+    applyMutation: vi.fn().mockResolvedValue(true),
   };
   return {
     getTasks: vi.fn().mockReturnValue(tasks),
@@ -188,6 +190,74 @@ describe("KanbanColumn", () => {
     it("does nothing when an undated task is dropped into No date", () => {
       const integration = dropDoneTask(noDateConfig);
       expect(integration.taskUpdater.updateTaskDate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Meta columns: a drop applies the column's mutation ────────
+
+  describe("drop into a meta column", () => {
+    const metaConfig: KanbanColumnConfig = {
+      id: "meta:unplanned",
+      title: "Unplanned",
+      symbols: [],
+      dropSymbol: "",
+      filters: buildMetaColumns([
+        {
+          id: "meta:unplanned",
+          title: "Unplanned",
+          filter: "not done\n(no scheduled date) OR (scheduled before today)",
+          mutation: "set not done\nclear scheduled date",
+        },
+      ])[0].filters,
+      mutation: [
+        { kind: "status-done", done: false },
+        { kind: "clear-date", field: "scheduledDate" },
+      ],
+    };
+
+    /** Drop the task at notes.md:5 into the meta column. */
+    function dropInto(config: KanbanColumnConfig, task: Task) {
+      const integration = mockIntegration([task]);
+      const col = new KanbanColumn(
+        container,
+        config,
+        integration as any,
+        false,
+      );
+      const cards = container.querySelector<HTMLElement>(
+        ".tasks-kanban-column-cards",
+      )!;
+      cards.dispatchEvent(
+        dragEvent(
+          "drop",
+          stubDataTransfer({
+            "application/task-path": "notes.md",
+            "application/task-line": "5",
+          }),
+        ),
+      );
+      col.destroy();
+      return integration;
+    }
+
+    it("applies the column's mutation", () => {
+      const integration = dropInto(metaConfig, DONE_TASK);
+      expect(integration.taskUpdater.applyMutation).toHaveBeenCalledWith(
+        DONE_TASK,
+        metaConfig.mutation,
+      );
+    });
+
+    it("leaves the status and date writers alone", () => {
+      const integration = dropInto(metaConfig, DONE_TASK);
+      expect(integration.taskUpdater.updateTaskStatus).not.toHaveBeenCalled();
+      expect(integration.taskUpdater.updateTaskDate).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when the task already belongs to the column", () => {
+      const unplanned: Task = { ...DONE_TASK, status: TODO_TASK.status };
+      const integration = dropInto(metaConfig, unplanned);
+      expect(integration.taskUpdater.applyMutation).not.toHaveBeenCalled();
     });
   });
 

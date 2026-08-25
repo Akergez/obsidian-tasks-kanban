@@ -30,6 +30,12 @@ import {
   serializeStatusFilter,
   type StatusFilterInstruction,
 } from "../utils/statusFilter";
+import {
+  matchesBooleanFilter,
+  parseBooleanFilter,
+  serializeBooleanFilter,
+  type BooleanFilterInstruction,
+} from "../utils/booleanFilter";
 
 /**
  * The canonical, line-based query that drives a board's filtering and sorting.
@@ -51,6 +57,7 @@ import {
  *   status.name (includes|does not include) <text>
  *   status.name (regex matches|regex does not match) /<pattern>/
  *   <date-field> <operator> <value>  (e.g., starts before tomorrow, due after 2026-07-10)
+ *   (<filter>) (AND|OR|XOR) (<filter>) | NOT (<filter>)
  *   sort by <due|scheduled|start|created|priority|filename> [reverse]
  *   group by <status|priority|due|…|tags|folder|filename> [reverse]
  *
@@ -79,7 +86,8 @@ export type FilterInstruction =
   | { kind: "description"; value: string }
   | DateFilterInstruction
   | StatusFilterInstruction
-  | LocationFilterInstruction;
+  | LocationFilterInstruction
+  | BooleanFilterInstruction;
 
 /** An empty query: no filters, no sorting, no grouping. */
 export const EMPTY_QUERY: BoardQuery = {
@@ -136,7 +144,7 @@ const GROUP_FIELD_TO_KEYWORD: Partial<Record<GroupField, string>> = {
 
 /** One-line summary of the supported syntax, used in error messages. */
 const SUPPORTED_SYNTAX =
-  "supported: tag includes #<tag>, tag not includes #<tag>, description includes <text>, <path|filename|folder> (includes|does not include) <text>, done, not done, status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>, status.name (includes|does not include) <text>, status.name (regex matches|regex does not match) /<pattern>/, <date-field> <operator> <value> (e.g., starts before tomorrow), sort by <due|scheduled|start|created|priority|filename> [reverse], group by <status|priority|tags|path|folder|filename> [reverse]";
+  "supported: tag includes #<tag>, tag not includes #<tag>, description includes <text>, <path|filename|folder> (includes|does not include) <text>, done, not done, status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>, status.name (includes|does not include) <text>, status.name (regex matches|regex does not match) /<pattern>/, <date-field> <operator> <value> (e.g., starts before tomorrow), (<filter>) AND|OR|XOR (<filter>), NOT (<filter>), sort by <due|scheduled|start|created|priority|filename> [reverse], group by <status|priority|tags|path|folder|filename> [reverse]";
 
 /**
  * Parse a multi-line query string into a {@link BoardQuery}. One instruction per
@@ -201,6 +209,36 @@ export function parseFilterLine(
 }
 
 /**
+ * Parse a multi-line, filter-only query: every line must be a filter, so a
+ * `sort by` / `group by` line is an error rather than being applied somewhere
+ * it has no meaning. Used where a query names a *set of tasks* rather than a
+ * view — a meta column's predicate (see utils/metaColumns). Tolerant like
+ * {@link parseQuery}: a bad line is skipped and reported.
+ */
+export function parseFilterLines(input: string): {
+  filters: FilterInstruction[];
+  errors: string[];
+} {
+  const filters: FilterInstruction[] = [];
+  const errors: string[] = [];
+
+  input.split("\n").forEach((rawLine, index) => {
+    const line = rawLine.trim();
+    if (line === "") {
+      return;
+    }
+    const result = parseFilterLine(line);
+    if ("error" in result) {
+      errors.push(`Line ${index + 1}: ${result.error}`);
+      return;
+    }
+    filters.push(result.filter);
+  });
+
+  return { filters, errors };
+}
+
+/**
  * Whether a single task satisfies every one of `filters`. Delegates to the same
  * {@link filterTasks} the board uses, so a rule matches exactly when the same
  * line would match in a query.
@@ -243,6 +281,15 @@ function parseLine(line: string): {
     }
     const direction: SortDirection = groupMatch[2] ? "desc" : "asc";
     return { group: { field, direction } };
+  }
+
+  // Boolean combinations come first: they are the only lines that open with a
+  // parenthesis or `NOT`, and their operands are parsed by this same function.
+  const booleanFilter = parseBooleanFilter(line, parseFilterLine);
+  if (booleanFilter) {
+    return "error" in booleanFilter
+      ? { error: booleanFilter.error }
+      : { filter: booleanFilter.filter };
   }
 
   const locationFilter = parseLocationFilter(line);
@@ -334,6 +381,8 @@ function serializeFilter(filter: FilterInstruction): string {
       return serializeStatusFilter(filter);
     case "location":
       return serializeLocationFilter(filter);
+    case "boolean":
+      return serializeBooleanFilter(filter, serializeFilter);
   }
 }
 
@@ -380,11 +429,46 @@ export function applyBoardQuery(tasks: Task[], query: BoardQuery): Task[] {
 }
 
 /**
+ * Whether one task satisfies one filter, each kind on its own terms.
+ *
+ * This is how a boolean filter evaluates its operands, so inside `(…) OR (…)`
+ * a tag instruction means exactly what it says — a task carries that tag —
+ * rather than joining the board-level OR pool {@link filterTasks} builds.
+ */
+function matchesFilter(
+  task: Task,
+  filter: FilterInstruction,
+  now: Date,
+): boolean {
+  switch (filter.kind) {
+    case "tag": {
+      const has = (task.tags ?? []).map(normalizeTag).includes(filter.value);
+      return filter.negated ? !has : has;
+    }
+    case "description":
+      return task.description
+        .toLowerCase()
+        .includes(filter.value.toLowerCase());
+    case "date":
+      return matchesDateFilter(task, filter, now);
+    case "status":
+      return matchesStatusFilter(task, filter);
+    case "location":
+      return matchesLocationFilter(task, filter);
+    case "boolean":
+      return matchesBooleanFilter(filter, (operand) =>
+        matchesFilter(task, operand, now),
+      );
+  }
+}
+
+/**
  * Apply filter instructions: positive tag instructions are OR-ed together (a task
  * matches if it carries any selected tag — mirroring the tag bar's multi-select),
  * negative (not includes) tags are AND-ed on top (a task must not carry any
  * excluded tag), and the description instruction is AND-ed on top of all.
- * Date filters are AND-ed with all other filters.
+ * Date filters are AND-ed with all other filters, as are boolean filters (each
+ * `(…) OR (…)` line is one filter, evaluated by {@link matchesFilter}).
  *
  * Note: this OR-within-tags differs from Tasks, where two `tag includes` lines
  * AND. It preserves the existing tag-filter UX; see NOTES.md.
@@ -431,6 +515,10 @@ function filterTasks(tasks: Task[], filters: FilterInstruction[]): Task[] {
     (f): f is LocationFilterInstruction => f.kind === "location",
   );
 
+  const booleanFilters = filters.filter(
+    (f): f is BooleanFilterInstruction => f.kind === "boolean",
+  );
+
   return tasks.filter((task) => {
     const taskTags = (task.tags ?? []).map(normalizeTag);
 
@@ -472,6 +560,13 @@ function filterTasks(tasks: Task[], filters: FilterInstruction[]): Task[] {
     const now = new Date();
     for (const dateFilter of dateFilters) {
       if (!matchesDateFilter(task, dateFilter, now)) {
+        return false;
+      }
+    }
+
+    // Boolean filters: AND'd — each line is one combined filter.
+    for (const booleanFilter of booleanFilters) {
+      if (!matchesFilter(task, booleanFilter, now)) {
         return false;
       }
     }

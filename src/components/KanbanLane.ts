@@ -75,20 +75,34 @@ export class KanbanLane {
     this.applyCollapsed();
   }
 
-  /** Distribute this lane's tasks across its columns (by status symbol, or by
-   *  column tag when the board uses tag columns). A task no column collects is
-   *  not shown (consistent with query filtering). */
+  /**
+   * Distribute this lane's tasks across its columns, each task going to the
+   * **first** column that collects it (see columnCollects). First-match rather
+   * than every-match is what lets a meta column overlap the columns behind it —
+   * it comes first, so it takes the cards it claims and the rest fall through —
+   * and it leaves the older board types unchanged, since their columns never
+   * overlap. A task no column collects is not shown, consistent with query
+   * filtering.
+   */
   updateTasks(
     tasks: Task[],
     colorRules: ColorRule[] = [],
     subTasksOf: Map<string, SubTask[]> = new Map(),
   ): void {
-    for (const column of this.columns) {
-      const columnTasks = tasks.filter((task) =>
+    const byColumn = this.columns.map<Task[]>(() => []);
+
+    for (const task of tasks) {
+      const index = this.columns.findIndex((column) =>
         columnCollects(column.config, task),
       );
-      column.updateTasks(columnTasks, colorRules, subTasksOf);
+      if (index !== -1) {
+        byColumn[index].push(task);
+      }
     }
+
+    this.columns.forEach((column, index) => {
+      column.updateTasks(byColumn[index], colorRules, subTasksOf);
+    });
   }
 
   /** Apply a shared column-fold change to this lane's matching column, if any. */

@@ -1,11 +1,14 @@
+import type { FilterInstruction } from "../query/boardQuery";
 import type { StatusInfo } from "../services/TasksIntegration";
 import type { ColumnConfig } from "../types/persistence";
 import type { DateField } from "./dateFilter";
+import type { MutationInstruction } from "./taskMutation";
 
 /**
  * Configuration for a Kanban column at render time.
  *
- * A column partitions tasks one of three ways, matching the board's type:
+ * A column partitions tasks one of four ways: three of them are the board's
+ * type, the fourth is a meta column, which any board may also carry.
  *
  * - *status mode* (neither `tagPrefix` nor `dateField` set): a task belongs to
  *   the column whose {@link symbols} include its status symbol. Default columns
@@ -16,8 +19,11 @@ import type { DateField } from "./dateFilter";
  * - *date mode* (`dateField` set): a task belongs to the column whose
  *   {@link date} equals its value for that field (see buildDateColumns in
  *   dateColumns.ts).
+ * - *meta mode* (`filters` set): a task belongs to the column when it satisfies
+ *   the column's own filters, and dropping a card in applies the column's
+ *   {@link mutation} (see buildMetaColumns in metaColumns.ts).
  *
- * Matching for all three modes lives in columnCollects (columnMatch.ts).
+ * Matching for all four modes lives in columnCollects (columnMatch.ts).
  */
 export interface KanbanColumnConfig {
   id: string;
@@ -35,6 +41,10 @@ export interface KanbanColumnConfig {
   dateField?: DateField;
   /** Date mode: the day this column collects; "" marks the catch-all column. */
   date?: string;
+  /** Meta mode: the filters a task must satisfy to land in this column. */
+  filters?: FilterInstruction[];
+  /** Meta mode: what is written to a task dropped into this column. */
+  mutation?: MutationInstruction[];
 }
 
 /**

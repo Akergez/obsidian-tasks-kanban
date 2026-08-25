@@ -2,12 +2,17 @@ import { type App, TFile } from "obsidian";
 import type { Task } from "./TasksIntegration";
 import type { TasksIntegration } from "./TasksIntegration";
 import {
-  FIELD_SYNTAX,
   resolveTaskFormat,
   setDateField,
   type WritableDateField,
 } from "../utils/taskFormat";
 import { setColumnTag } from "../utils/tagColumns";
+import {
+  applyMutations,
+  applyStatusChange,
+  type MutationContext,
+  type MutationInstruction,
+} from "../utils/taskMutation";
 
 /**
  * Service for updating task status in source files
@@ -30,66 +35,32 @@ export class TaskUpdater {
     task: Task,
     newStatusSymbol: string,
   ): Promise<boolean> {
-    return this.rewriteTaskLine(task, async (line) => {
-      const match = line.match(/^(\s*- \[)[^\]]*(]\s*.*)$/);
-      if (!match) {
-        return null;
-      }
-
-      // Get Tasks plugin write settings
-      const { setDoneDate, setCancelledDate, taskFormat } =
-        await this.tasksIntegration.getWriteSettings();
-      const syntax = FIELD_SYNTAX[resolveTaskFormat(taskFormat)];
-
-      // Get current and new status types
-      const currentStatus = this.tasksIntegration.getStatusBySymbol(
+    return this.rewriteTaskLine(task, async (line) =>
+      applyStatusChange(
+        line,
         task.status.symbol,
-      );
-      const newStatus =
-        this.tasksIntegration.getStatusBySymbol(newStatusSymbol);
+        newStatusSymbol,
+        await this.mutationContext(),
+      ),
+    );
+  }
 
-      // First, replace the status symbol in the line
-      const lineWithNewSymbol = line.replace(
-        `${match[1]}${task.status.symbol}${match[2]}`,
-        `${match[1]}${newStatusSymbol}${match[2]}`,
-      );
-
-      // Build the updated line
-      let updatedLine = lineWithNewSymbol;
-
-      // Handle done date: add when transitioning TO DONE, remove when transitioning AWAY from DONE
-      if (newStatus?.type === "DONE" && currentStatus?.type !== "DONE") {
-        if (setDoneDate) {
-          const today = this.getTodayDateString();
-          // No $ anchor: see FieldSyntax.strip doc comment in taskFormat.ts.
-          updatedLine = updatedLine.replace(syntax.doneDate.strip, "");
-          updatedLine = `${updatedLine}${syntax.doneDate.render(today)}`;
-        }
-      } else if (currentStatus?.type === "DONE" && newStatus?.type !== "DONE") {
-        // Transitioning AWAY from DONE - remove the done date
-        updatedLine = updatedLine.replace(syntax.doneDate.strip, "");
-      }
-
-      // Handle cancelled date: add when transitioning TO CANCELLED, remove when transitioning AWAY from CANCELLED
-      if (
-        newStatus?.type === "CANCELLED" &&
-        currentStatus?.type !== "CANCELLED"
-      ) {
-        if (setCancelledDate) {
-          const today = this.getTodayDateString();
-          updatedLine = updatedLine.replace(syntax.cancelledDate.strip, "");
-          updatedLine = `${updatedLine}${syntax.cancelledDate.render(today)}`;
-        }
-      } else if (
-        currentStatus?.type === "CANCELLED" &&
-        newStatus?.type !== "CANCELLED"
-      ) {
-        // Transitioning AWAY from CANCELLED - remove the cancelled date
-        updatedLine = updatedLine.replace(syntax.cancelledDate.strip, "");
-      }
-
-      return updatedLine;
-    });
+  /**
+   * Apply a meta column's mutation to a task: rewrite its line so every
+   * instruction of the mutation holds (see utils/taskMutation). One rewrite for
+   * the whole mutation, so a column that changes both the status and a date
+   * writes the file once.
+   */
+  async applyMutation(
+    task: Task,
+    mutations: MutationInstruction[],
+  ): Promise<boolean> {
+    if (mutations.length === 0) {
+      return false;
+    }
+    return this.rewriteTaskLine(task, async (line) =>
+      applyMutations(line, task, mutations, await this.mutationContext()),
+    );
   }
 
   /**
@@ -123,6 +94,28 @@ export class TaskUpdater {
       const { taskFormat } = await this.tasksIntegration.getWriteSettings();
       return setDateField(line, field, date, resolveTaskFormat(taskFormat));
     });
+  }
+
+  /**
+   * The vault's statuses and the Tasks plugin's write settings, read fresh for
+   * each write so a settings change applies to the next one.
+   */
+  private async mutationContext(): Promise<MutationContext> {
+    const { setDoneDate, setCancelledDate, taskFormat } =
+      await this.tasksIntegration.getWriteSettings();
+    return {
+      statusOf: (symbol) => this.tasksIntegration.getStatusBySymbol(symbol),
+      // Looked up lazily, and only by `set done` / `set not done`: the first
+      // configured status of the type, which is how a status column picks its
+      // drop symbol too (core statuses come before custom ones).
+      symbolForType: (type) =>
+        this.tasksIntegration.getStatuses().find((s) => s.type === type)
+          ?.symbol ?? null,
+      format: resolveTaskFormat(taskFormat),
+      setDoneDate,
+      setCancelledDate,
+      today: this.getTodayDateString(),
+    };
   }
 
   /**

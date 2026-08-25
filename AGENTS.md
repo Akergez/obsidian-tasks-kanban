@@ -74,6 +74,9 @@ obsidian-tasks-kanban/
 │   │   ├── tagColumns.ts            # Tag-derived columns + tag rewriting
 │   │   ├── dateColumns.ts           # Day columns for a date board
 │   │   ├── weeklyBoard.ts           # ISO weeks + the weekly planner's board
+│   │   ├── metaColumns.ts           # Meta columns: predicate + mutation columns
+│   │   ├── booleanFilter.ts         # (a) AND/OR/XOR (b), NOT (a) over filters
+│   │   ├── taskMutation.ts          # The mutation language + applying it to a line
 │   │   ├── columnMatch.ts           # columnCollects: the one column↔task matcher
 │   │   ├── taskFormat.ts            # Emoji/Dataview date field syntax + writing
 │   │   ├── groupTasks.ts            # Swimlane grouping
@@ -141,13 +144,21 @@ A board's `boardType` (`status` | `tag` | `date`, in `types/persistence.ts`) is 
 - **Tag columns** (`utils/tagColumns.ts`) — columns are discovered from the tasks' `#<prefix>_<column>` tags: those named in the board's `columnOrder` come first in that order, the rest follow alphabetically, and a catch-all for untagged tasks leads. A drop rewrites the tag via `TaskUpdater.updateTaskColumnTag` and leaves the status alone. With no prefix set yet there is nothing to discover from, so the board falls back to status columns.
 - **Date columns** (`utils/dateColumns.ts`) — one column per configured exact day (`YYYY-MM-DD`) on one `dateField`, led by a "No date" catch-all. Unlike tag columns these are *configured, not discovered*, which is what makes a task dated outside every column **hidden**. A drop writes that day via `TaskUpdater.updateTaskDate` (the catch-all clears the field) and leaves the status alone.
 
-`columnCollects` (in `utils/columnMatch.ts`) is the single matcher for all three modes; `KanbanLane` and `KanbanColumn`'s drop handler go through it, so distribution and drops can't disagree.
+On top of its type's columns a board may carry any number of **meta columns** (`utils/metaColumns.ts`, configured per board in the settings modal):
+
+- A meta column is a *predicate* — filter lines in the board query language — plus a *mutation* — instructions in its imperative twin (`utils/taskMutation.ts`), applied by `TaskUpdater.applyMutation` when a card is dropped in. Neither is tied to one field, which is the point: the column is defined by what it means.
+- The predicate can say things a single field cannot, which is why the query language grew boolean combinators (`utils/booleanFilter.ts`): `(no scheduled date) OR (scheduled before today)`. Operators are capitals and every sub-filter is parenthesised, as in the Tasks reference; that is also what keeps a lowercase "or" inside a description filter ordinary text.
+- Meta columns render **before** the type's columns, and a task goes to the **first** column that collects it (`KanbanLane.updateTasks`). Overlap is therefore resolved by position: the planner's "Unplanned" pool overlaps the date board's "No date" catch-all and wins it. Before meta columns existed no two columns could overlap, so first-match changes nothing for the older types.
+
+`columnCollects` (in `utils/columnMatch.ts`) is the single matcher for all four modes; `KanbanLane` and `KanbanColumn`'s drop handler go through it, so distribution and drops can't disagree.
 
 `resolveBoardType` handles boards written before types were explicit: no `boardType` key means the old implicit rule applies (a `columnTagPrefix` ⇒ tag board, otherwise status).
 
 ### Weekly Planner
 
 The ribbon's calendar button calls `TasksKanbanPlugin.openWeeklyPlanner`. `utils/weeklyBoard.ts` is pure: `startOfWeek` (Monday-based, unlike the Sunday-based `in this week` query filter, which follows Tasks), `isoWeekName` (`2026-W35`, decided by the week's Thursday) and `buildWeeklyBoard`, whose column ids are derived from the day so the document is a pure function of the week.
+
+The planner is a date board whose columns are the seven weekdays, led by the `Unplanned` meta column: unfinished work with no day, or a day already past. Its mutation (`set not done`, `clear <field> date`) is the exact undoing of a drop into a weekday, so dragging a card out of the week returns it to the pool rather than leaving it dated in the past. Both are written against the planner's own date field.
 
 The week name is the file name, so identity is positional, not stored: `BoardRepository.ensure` writes the file only when it is absent, which is what makes reopening mid-week return the board with its edits rather than a regenerated one. The folder comes from `weeklyPlannerFolder`, nested under `boardsFolder` by default so weekly boards still appear in the picker.
 
@@ -156,6 +167,8 @@ The week name is the file name, so identity is positional, not stored: `BoardRep
 `utils/taskFormat.ts` owns the syntax of every Tasks date field in both formats, and `setDateField` is the one writer: it strips existing occurrences **written in the active format only** (a foreign-format token is the user's own text) and appends the new one before any trailing `^block-id`.
 
 Which format is active comes from `TasksIntegration.getWriteSettings()`: the Tasks plugin's own `taskFormat`, overridden by this plugin's `taskFormat` setting unless that is `auto`.
+
+Status changes go through `applyStatusChange` (`utils/taskMutation.ts`), which is also what `set done` / `set not done` reach: the done/cancelled-date rule lives there once, so a status-column drop and a meta column's mutation cannot drift apart. `TaskUpdater` supplies the surrounding facts (statuses, write settings, today) as a `MutationContext`, keeping the rewriting itself pure.
 
 ### Nested Tasks
 

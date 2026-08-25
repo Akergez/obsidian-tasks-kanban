@@ -134,6 +134,20 @@ export const FIELD_SYNTAX: Record<
 const TRAILING_BLOCK_ID = /\s+\^[A-Za-z0-9-]+\s*$/;
 
 /**
+ * Append `suffix` to a task line, keeping it in front of any trailing block
+ * reference — Obsidian only recognises `^id` at the very end of the line.
+ */
+export function appendToTaskLine(line: string, suffix: string): string {
+  const trimmed = line.replace(/\s+$/, "");
+  const blockId = TRAILING_BLOCK_ID.exec(trimmed);
+  if (blockId) {
+    const head = trimmed.slice(0, blockId.index);
+    return `${head}${suffix}${blockId[0].replace(/\s+$/, "")}`;
+  }
+  return `${trimmed}${suffix}`;
+}
+
+/**
  * Rewrite `line` so it carries exactly one occurrence of `field` holding
  * `date`, or none when `date` is null.
  *
@@ -155,12 +169,7 @@ export function setDateField(
     return stripped;
   }
 
-  const blockId = TRAILING_BLOCK_ID.exec(stripped);
-  if (blockId) {
-    const head = stripped.slice(0, blockId.index);
-    return `${head}${syntax.render(date)}${blockId[0].replace(/\s+$/, "")}`;
-  }
-  return `${stripped}${syntax.render(date)}`;
+  return appendToTaskLine(stripped, syntax.render(date));
 }
 
 /**

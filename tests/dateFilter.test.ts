@@ -368,12 +368,12 @@ describe("serializeDateFilter", () => {
   it("serializes 'has' operator filters", () => {
     const filter = parseDateFilter("has start date");
     expect(filter).not.toBeNull();
-    expect(serializeDateFilter(filter!)).toBe("start has date");
+    expect(serializeDateFilter(filter!)).toBe("has start date");
   });
 
   it("serializes 'no' operator filters", () => {
     const filter = parseDateFilter("no due date");
     expect(filter).not.toBeNull();
-    expect(serializeDateFilter(filter!)).toBe("due no date");
+    expect(serializeDateFilter(filter!)).toBe("no due date");
   });
 });
