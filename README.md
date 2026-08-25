@@ -7,8 +7,8 @@ A Kanban board view plugin for Obsidian that displays Tasks in a visual board la
 ## Features
 
 - **Kanban Board View**: Display your tasks in a Kanban-style board with a column per status
-- **Three Board Types**: Pick per board whether its columns are statuses, tags, or dates
-- **Weekly Planner**: One ribbon click opens this week's board — a column per weekday, created once and reopened after that
+- **Four Board Types**: Pick per board whether its columns are statuses, tags, dates, or the days of a week
+- **Weekly Planner**: One ribbon click opens a planner with a column per weekday — one note that is the board for *every* week, with arrows to page between them
 - **Boards Are Files**: Each board is a readable `.kanban` YAML file in your vault — click it to open, and it syncs and versions like any note
 - **Base Query**: A shared query merged into every board, so common filters live in one place
 - **Per-Board Settings**: Each board is configured on the board itself, from a gear button — settings never turn into an endless list
@@ -42,7 +42,7 @@ From the command palette:
 - **Open board** — opens the base board (the shared base query, no file)
 - **Open board…** — pick one of your board files to open
 - **Create new board** — create a fresh `.kanban` file and open it
-- **Open weekly planner** — open this week's planner (also on the ribbon)
+- **Open weekly planner** — open the weekly planner (also on the ribbon)
 
 Or just click a `.kanban` file in the file explorer.
 
@@ -50,21 +50,23 @@ Each board opens in its own tab; opening a board that's already open focuses its
 
 ### Weekly planner
 
-The calendar button in the left ribbon opens **this week's planner**: a [date board](#date-columns) with one column per weekday, Monday through Sunday.
+The calendar button in the left ribbon opens the **weekly planner**: a [week board](#week-columns) with one column per weekday, Monday through Sunday, led by an **Unplanned** pool.
 
-The board is named after its ISO week (`2026-W35`), which is also its file name, so the week *is* its identity:
+There is exactly one planner note, and it is the board for *every* week:
 
-- The first time you ask for a week, the file is created in the **Weekly planner folder** (plugin Settings → Boards; default `Kanban/Weekly`, empty means the vault root).
-- Asking again later in the same week reopens that same board — your columns, folds and query are all still there. Nothing is regenerated or overwritten.
-- A new week has no file yet, so a fresh one is written.
+- The columns are the days of whichever week you are looking at. The `‹ 2026-W35 ›` control above the board pages a week back or forward; clicking the week itself returns to the one you are in.
+- Nothing in the note names a week, so there is no file per week to create, find or keep in step — pinning a card to next Thursday is done on the board, not by opening another one.
+- The first time you use it, the note is written to the **Weekly planner note** path (plugin Settings → Boards; default `Kanban/Weekly.md`). After that it is yours: edit its columns, pool, actions and query like any other board and every week gets them.
 
-Weeks start on Monday. The planner's columns use the **scheduled** date; change the board's date field from its gear button afterwards if you'd rather plan by due date — though that choice lives in the board file, so next week's planner starts on scheduled again.
+Weeks start on Monday. The planner plans by the **scheduled** date; change the board's date field from its gear button if you'd rather plan by due date.
 
-By default the folder sits inside the boards folder, so weekly boards also show up in *Open board…* like any other board.
+The **Unplanned** pool collects unfinished work with no day, or a day older than the week's Monday, minus anything tagged for a *different* week. A card's right-click menu offers **Next week** — which clears its day and moves its `#w35_2026` preplanning tag on to the next week, so it leaves this week and shows up when you page forward — plus **Cancel** and **Done**.
+
+Since the note lives in the boards folder, the planner also shows up in *Open board…* like any other board.
 
 ### Columns
 
-Every board has a **board type**, chosen explicitly in that board's settings (the gear button above the board), that says what its columns are: **status columns**, **tag columns**, or **date columns**. Switching type keeps the other types' settings, so you can switch back without re-entering them.
+Every board has a **board type**, chosen explicitly in that board's settings (the gear button above the board), that says what its columns are: **status columns**, **tag columns**, **date columns**, or **week columns**. Switching type keeps the other types' settings, so you can switch back without re-entering them.
 
 #### Status columns
 
@@ -113,6 +115,27 @@ Two rules make a date board a deliberately narrow view:
 
 Dates are exact days (`YYYY-MM-DD`), so a date board is a snapshot of named days rather than a rolling window.
 
+#### Week columns
+
+A week board is a date board whose seven days it does not store: they are built for **the week you are looking at**, Monday to Sunday, every time the board is drawn. That is what lets one note be the planner for every week — the arrows above the board page between them, and the file never changes.
+
+Because no week is written down, the week has to be spelled out where a board would otherwise name a date. In a week board's filters, mutations and colour rules, these placeholders stand for the week on screen:
+
+| Placeholder                      | For `2026-W35` |
+| -------------------------------- | -------------- |
+| `{{week}}` / `{{ww}}`            | `35` / `35`    |
+| `{{year}}`                       | `2026`         |
+| `{{monday}}` … `{{sunday}}`      | `2026-08-24` … |
+| `{{nextWeek}}` / `{{nextYear}}`  | `36` / `2026`  |
+| `{{prevWeek}}` / `{{prevYear}}`  | `34` / `2026`  |
+| `{{nextMonday}}`                 | `2026-08-31`   |
+
+They are substituted on the way to the screen and never written back, so the file keeps saying `{{monday}}`. Neighbouring weeks come as their own number/year pairs because arithmetic would be wrong exactly when it matters: week 53 of 2026 is followed by week 1 of **2027**.
+
+The board's **query** is not templated — the search, sort and group bars edit it as structure and write it back, so a placeholder there would not survive. A week board narrows itself with its columns instead.
+
+Folding is by weekday, not by date: fold Saturday and it stays folded as you page through the weeks.
+
 #### Task format
 
 Dragging a card onto a date column writes a date into your note. **Settings → Tasks integration → Task format** decides how:
@@ -160,6 +183,26 @@ dateColumns:
   - id: 2a70…
     title: Tuesday
     date: "2026-08-25"
+
+collapsedColumns: []
+collapsedGroups: []
+```
+
+A week board carries the field but no days at all — they are built for the week being shown:
+
+```yaml
+name: Weekly
+boardType: week
+dateField: scheduled
+noDateColumn: false
+
+actions:
+  - id: action:next-week
+    title: Next week
+    mutation: |-
+      clear scheduled date
+      remove tag #w{{week}}_{{year}}
+      add tag #w{{nextWeek}}_{{nextYear}}
 
 collapsedColumns: []
 collapsedGroups: []

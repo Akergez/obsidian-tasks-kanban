@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   WEEKDAY_TITLES,
+  addWeeks,
   isoWeekName,
+  renderWeek,
   startOfWeek,
+  weekColumns,
   weekDays,
+  weekRange,
   weekTag,
   weekVariables,
 } from "../src/utils/weeklyBoard";
@@ -163,5 +167,67 @@ describe("weekVariables", () => {
     expect(first.year).toBe("2027");
     expect(first.prevWeek).toBe("53");
     expect(first.prevYear).toBe("2026");
+  });
+});
+
+describe("addWeeks", () => {
+  it("steps forward and back a week at a time", () => {
+    expect(addWeeks(day("2026-08-24"), 1)).toEqual(day("2026-08-31"));
+    expect(addWeeks(day("2026-08-24"), -1)).toEqual(day("2026-08-17"));
+    expect(addWeeks(day("2026-08-24"), 0)).toEqual(day("2026-08-24"));
+  });
+
+  it("crosses a year boundary", () => {
+    expect(addWeeks(day("2026-12-28"), 1)).toEqual(day("2027-01-04"));
+  });
+
+  it("stays on a Monday however far it goes", () => {
+    for (const count of [-30, -1, 5, 40]) {
+      expect(addWeeks(day("2026-08-24"), count).getDay()).toBe(1);
+    }
+  });
+});
+
+describe("weekColumns", () => {
+  const columns = weekColumns(day("2026-08-24"));
+
+  it("is the seven days of that week, Monday first", () => {
+    expect(columns.map((c) => c.date)).toEqual(weekDays(day("2026-08-24")));
+  });
+
+  it("titles a column with its weekday and its date", () => {
+    expect(columns[0].title).toBe("Monday 24 Aug");
+    expect(columns[6].title).toBe("Sunday 30 Aug");
+  });
+
+  it("keys columns by weekday, not by date, so a fold survives paging", () => {
+    const next = weekColumns(day("2026-08-31"));
+    expect(columns.map((c) => c.id)).toEqual(next.map((c) => c.id));
+    expect(columns[5].id).toBe("week:saturday");
+  });
+});
+
+describe("weekRange", () => {
+  it("spells the week out as a span of days", () => {
+    expect(weekRange(day("2026-08-24"))).toBe("24 Aug – 30 Aug 2026");
+  });
+
+  it("spans a month, and a year, when the week does", () => {
+    expect(weekRange(day("2026-12-28"))).toBe("28 Dec – 3 Jan 2027");
+  });
+});
+
+describe("renderWeek", () => {
+  it("substitutes a week's values into a templated field", () => {
+    expect(
+      renderWeek("remove tag #w{{week}}_{{year}}", day("2026-08-24")),
+    ).toBe("remove tag #w35_2026");
+  });
+
+  it("leaves a regex the template language does not own alone", () => {
+    const filter = String.raw`tag regex matches /^#w0*{{week}}_{{year}}$/ OR NOT (tag regex matches /^#w\d+_\d{4}$/)`;
+    expect(renderWeek(filter, day("2026-01-26"))).toBe(
+      String.raw`tag regex matches /^#w0*5_2026$/ OR NOT (tag regex matches /^#w\d+_\d{4}$/)`,
+    );
   });
 });

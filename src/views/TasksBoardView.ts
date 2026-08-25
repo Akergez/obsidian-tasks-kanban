@@ -78,6 +78,12 @@ export class TasksBoardView extends TextFileView {
   private unsubscribe: (() => void) | null = null;
   /** The parsed board, or null when the note holds no block to read. */
   private board: BoardFile | null = null;
+  /**
+   * The note this view last read. Obsidian reuses a leaf — and with it this
+   * view and its board — for the next file opened in it, so this is what tells
+   * "the same board saved itself" from "a different board arrived".
+   */
+  private boardPath: string | null = null;
   private readonly persistence: BoardStatePersistence;
 
   constructor(
@@ -206,6 +212,14 @@ export class TasksBoardView extends TextFileView {
     const fallback = this.file ? boardNameFromPath(this.file.path) : "Board";
     const block = findBoardBlock(data);
     this.board = block ? parseBoardFile(block.body, fallback).board : null;
+
+    const path = this.file?.path ?? null;
+    if (path !== this.boardPath) {
+      // A different note: whatever week the previous board had been paged to is
+      // none of this one's business.
+      this.kanbanBoard?.resetWeek();
+      this.boardPath = path;
+    }
 
     if (clear) {
       this.kanbanBoard?.reloadQueryFromPersistence();

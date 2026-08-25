@@ -55,6 +55,23 @@ describe("serializeBoardFile", () => {
     );
   });
 
+  it("writes a week board's date field, but never its days", () => {
+    const text = serializeBoardFile(
+      board({
+        boardType: "week",
+        dateField: "scheduledDate",
+        noDateColumn: false,
+        // Left over from a board that used to be a date board: a week board
+        // builds its own days, so these must not survive the write.
+        dateColumns: [{ id: "c1", title: "Monday", date: "2026-08-24" }],
+      }),
+    );
+    expect(text).toContain("boardType: week");
+    expect(text).toContain("dateField: scheduled");
+    expect(text).toContain("noDateColumn: false");
+    expect(text).not.toContain("dateColumns:");
+  });
+
   it("quotes a column date so YAML cannot read it back as a timestamp", () => {
     const text = serializeBoardFile(
       board({
@@ -358,6 +375,23 @@ describe("parseBoardFile", () => {
     expect(parseBoardFile("boardType: nonsense", "B").board.boardType).toBe(
       "status",
     );
+  });
+
+  it("reads a hand-written week board", () => {
+    const { board, errors } = parseBoardFile(
+      [
+        "name: Weekly",
+        "boardType: week",
+        "dateField: scheduled",
+        "noDateColumn: false",
+      ].join("\n"),
+      "fallback",
+    );
+    expect(errors).toEqual([]);
+    expect(board.boardType).toBe("week");
+    expect(board.dateField).toBe("scheduledDate");
+    expect(board.noDateColumn).toBe(false);
+    expect(board.dateColumns).toEqual([]);
   });
 
   it("reads a hand-written date board, keyword and bare day included", () => {

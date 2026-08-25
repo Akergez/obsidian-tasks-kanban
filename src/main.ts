@@ -13,22 +13,14 @@ import {
 import { TasksIntegration, type StatusInfo } from "./services/TasksIntegration";
 import { TasksKanbanSettingsTab } from "./settings/SettingsTab";
 import { BoardPickerModal } from "./components/BoardPickerModal";
-import {
-  BoardRepository,
-  boardPath,
-  type BoardEntry,
-} from "./services/BoardRepository";
-import {
-  DEFAULT_WEEKLY_TEMPLATE,
-  renderWeeklyTemplate,
-} from "./query/weeklyTemplate";
+import { BoardRepository, type BoardEntry } from "./services/BoardRepository";
+import { DEFAULT_WEEKLY_NOTE } from "./query/weeklyNote";
 import {
   DEFAULT_PLUGIN_DATA,
   type LegacyBoardState,
   type PluginData,
 } from "./types/persistence";
 import { resolveTaskFormatSetting } from "./utils/taskFormat";
-import { isoWeekName, startOfWeek } from "./utils/weeklyBoard";
 import {
   EMPTY_QUERY,
   serializeQuery,
@@ -47,8 +39,7 @@ export type SettingsSlice = Pick<
   | "taskFormat"
   | "baseCardColors"
   | "boardsFolder"
-  | "weeklyPlannerFolder"
-  | "weeklyTemplatePath"
+  | "weeklyBoardPath"
 >;
 
 /**
@@ -158,70 +149,36 @@ export default class TasksKanbanPlugin extends Plugin {
     }
   }
 
-  /**
-   * The weekly template, creating it from the default the first time it is
-   * asked for. Its path is a setting, so a vault can keep it anywhere; the
-   * plugin's own copy lands in the vault root.
-   */
-  async weeklyTemplate(): Promise<string> {
-    const path =
-      this.data.weeklyTemplatePath.trim() ||
-      DEFAULT_PLUGIN_DATA.weeklyTemplatePath;
-    const repository = this.getBoardRepository();
-    const created = await repository.ensureNote(path, DEFAULT_WEEKLY_TEMPLATE);
-    if (created) {
-      new Notice(`Tasks Kanban: created the weekly template at ${path}`);
-    }
-
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) {
-      // Unwritable path (a folder in the way, a read-only vault): fall back to
-      // the built-in template rather than refusing to open the planner.
-      new Notice(`Tasks Kanban: could not read the template at ${path}`);
-      return DEFAULT_WEEKLY_TEMPLATE;
-    }
-    return this.app.vault.read(file);
+  /** The configured planner note, falling back to the default path. */
+  private weeklyBoardPath(): string {
+    return (
+      this.data.weeklyBoardPath.trim() || DEFAULT_PLUGIN_DATA.weeklyBoardPath
+    );
   }
 
   /**
-   * Open this week's planner, creating it the first time it is asked for.
+   * Open the weekly planner, creating the note from the default the first time
+   * it is asked for.
    *
-   * The note's name is the ISO week (`2026-W35`), so the same week always
-   * resolves to the same file: asking again later in the week reopens the board
-   * you have been planning in, edits and all. A new week simply has no note
-   * yet, so the template is rendered for it and written.
+   * There is exactly one planner note, and it is the board for **every** week:
+   * it is a week board (see BoardType), so it names no week and its columns are
+   * built for whichever week the board is showing. Paging to next week is a
+   * button on the board, not another file — so nothing here has to decide which
+   * week you meant, and a planner opened in December still holds January's
+   * edits because it is the same document.
    *
-   * The name stays the plugin's to decide even though everything else about the
-   * planner is the template's: it is what makes "this week's board" findable
-   * without rendering and parsing the template first.
+   * An existing note is never rewritten: once it exists it is the user's.
    */
   async openWeeklyPlanner(): Promise<string> {
-    const monday = startOfWeek(new Date());
-    const path = boardPath(this.data.weeklyPlannerFolder, isoWeekName(monday));
-
-    const repository = this.getBoardRepository();
-    if (!(this.app.vault.getAbstractFileByPath(path) instanceof TFile)) {
-      const { text, errors } = renderWeeklyTemplate(
-        await this.weeklyTemplate(),
-        monday,
-      );
-      for (const error of errors) {
-        new Notice(`Tasks Kanban: ${error}`);
-      }
-      await repository.writeNote(path, text);
-      new Notice(`Tasks Kanban: created ${path}`);
+    const path = this.weeklyBoardPath();
+    const created = await this.getBoardRepository().ensureNote(
+      path,
+      DEFAULT_WEEKLY_NOTE,
+    );
+    if (created) {
+      new Notice(`Tasks Kanban: created the weekly planner at ${path}`);
     }
 
-    await this.openBoard(path);
-    return path;
-  }
-
-  /** Open the weekly template itself, for editing. Creates it if absent. */
-  async openWeeklyTemplate(): Promise<string> {
-    await this.weeklyTemplate();
-    const path =
-      this.data.weeklyTemplatePath.trim() ||
-      DEFAULT_PLUGIN_DATA.weeklyTemplatePath;
     await this.openBoard(path);
     return path;
   }
@@ -361,14 +318,6 @@ export default class TasksKanbanPlugin extends Plugin {
       },
     });
 
-    this.addCommand({
-      id: "open-weekly-template",
-      name: "Edit weekly planner template",
-      callback: () => {
-        void this.openWeeklyTemplate();
-      },
-    });
-
     this.addRibbonIcon("calendar-days", "Open weekly planner", () => {
       void this.openWeeklyPlanner();
     });
@@ -399,10 +348,8 @@ export default class TasksKanbanPlugin extends Plugin {
       baseCardColors:
         data?.baseCardColors ?? DEFAULT_PLUGIN_DATA.baseCardColors,
       boardsFolder: data?.boardsFolder ?? DEFAULT_PLUGIN_DATA.boardsFolder,
-      weeklyPlannerFolder:
-        data?.weeklyPlannerFolder ?? DEFAULT_PLUGIN_DATA.weeklyPlannerFolder,
-      weeklyTemplatePath:
-        data?.weeklyTemplatePath ?? DEFAULT_PLUGIN_DATA.weeklyTemplatePath,
+      weeklyBoardPath:
+        data?.weeklyBoardPath ?? DEFAULT_PLUGIN_DATA.weeklyBoardPath,
     };
   }
 

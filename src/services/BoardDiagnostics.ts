@@ -128,7 +128,7 @@ export async function collectBoardDiagnostics(
       `  explorer row marked: ${row.hasAttribute("data-tasks-kanban")}`,
     );
     lines.push(
-      `  board badge present: ${row.querySelector(".tasks-kanban-file-tag") !== null}`,
+      `  board badge present: ${row.querySelector(".tasks-kanban-file-icon") !== null}`,
     );
     lines.push(`  explorer row HTML: ${clip(row.outerHTML)}`);
   } else {

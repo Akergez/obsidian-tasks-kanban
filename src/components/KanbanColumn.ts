@@ -3,6 +3,7 @@ import { TasksIntegration } from "../services/TasksIntegration";
 import { KanbanCard } from "./KanbanCard";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
 import { columnCollects } from "../utils/columnMatch";
+import { todayISO } from "../utils/dateColumns";
 import type { BoardAction } from "../utils/boardActions";
 import { colorFor, type ColorRule } from "../utils/cardColors";
 import { taskKey, type SubTask } from "../utils/taskHierarchy";
@@ -76,6 +77,13 @@ export class KanbanColumn {
 
     // Store references
     this.container.setAttribute("data-column-id", this.config.id);
+
+    // The day column standing for today gets marked, so a board of seven
+    // weekdays says where you are without anyone reading the dates.
+    this.container.toggleClass(
+      "tasks-kanban-column-today",
+      this.config.date === todayISO(),
+    );
 
     // Apply the initial fold state and make the header a toggle.
     this.applyCollapsed();

@@ -50,15 +50,12 @@ const BASE_COLORS_DESC =
   "follow, so a board can override a shared colour but still inherits the rest. " +
   "One rule per line: a filter, then '->', then a CSS colour.";
 
-const WEEKLY_TEMPLATE_DESC =
-  "The note this week's planner is rendered from: a ```tasks-kanban block with " +
-  "{{monday}}, {{week}}, {{year}}, {{nextWeek}} and the rest substituted for " +
-  "the week. Created from the built-in default the first time the planner is " +
-  "opened; edit it to change what every future week looks like.";
-
-const WEEKLY_FOLDER_DESC =
-  "Vault folder the weekly planner's boards are created in. The ribbon's " +
-  "calendar button opens this week's board there, creating it the first time.";
+const WEEKLY_BOARD_DESC =
+  "The note the weekly planner lives in — one note for every week, since a " +
+  "week board fixes no week: its columns are the days of whichever week the " +
+  "arrows above it are pointing at. Created from the built-in default the " +
+  "first time the ribbon's calendar button is used, and yours to edit after " +
+  "that.";
 
 /**
  * Settings for the plugin as a whole.
@@ -67,8 +64,8 @@ const WEEKLY_FOLDER_DESC =
  * base query and colour rules merged into each board, and where board files go.
  * A single board's own settings — its type, columns, query and colours — are
  * edited on the board itself (see BoardSettingsModal), because boards are files
- * and a vault accumulates them: a weekly planner alone adds one every week, so
- * a pane that listed every board would scroll without end.
+ * and a vault accumulates them, so a pane that listed every board would scroll
+ * without end.
  */
 export class TasksKanbanSettingsTab extends PluginSettingTab {
   private plugin: TasksKanbanPlugin;
@@ -78,8 +75,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
   private baseQuery = "";
   private baseCardColors = "";
   private boardsFolder = "";
-  private weeklyPlannerFolder = "";
-  private weeklyTemplatePath = "";
+  private weeklyBoardPath = "";
 
   /** Parse errors keyed by field, so one bad field alone gates Save. */
   private errors = new Map<string, string[]>();
@@ -111,8 +107,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
     this.baseQuery = data.baseQuery;
     this.baseCardColors = data.baseCardColors;
     this.boardsFolder = data.boardsFolder;
-    this.weeklyPlannerFolder = data.weeklyPlannerFolder;
-    this.weeklyTemplatePath = data.weeklyTemplatePath;
+    this.weeklyBoardPath = data.weeklyBoardPath;
     this.errors.clear();
 
     this.render();
@@ -169,26 +164,14 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Weekly planner folder")
-      .setDesc(WEEKLY_FOLDER_DESC)
+      .setName("Weekly planner note")
+      .setDesc(WEEKLY_BOARD_DESC)
       .addText((text) => {
         text
-          .setPlaceholder("Kanban/Weekly")
-          .setValue(this.weeklyPlannerFolder)
+          .setPlaceholder("Kanban/Weekly.md")
+          .setValue(this.weeklyBoardPath)
           .onChange((value) => {
-            this.weeklyPlannerFolder = value.trim();
-          });
-      });
-
-    new Setting(containerEl)
-      .setName("Weekly planner template")
-      .setDesc(WEEKLY_TEMPLATE_DESC)
-      .addText((text) => {
-        text
-          .setPlaceholder("Tasks Kanban weekly template.md")
-          .setValue(this.weeklyTemplatePath)
-          .onChange((value) => {
-            this.weeklyTemplatePath = value.trim();
+            this.weeklyBoardPath = value.trim();
           });
       });
 
@@ -295,8 +278,7 @@ export class TasksKanbanSettingsTab extends PluginSettingTab {
       baseQuery: this.baseQuery,
       baseCardColors: this.baseCardColors,
       boardsFolder: this.boardsFolder,
-      weeklyPlannerFolder: this.weeklyPlannerFolder,
-      weeklyTemplatePath: this.weeklyTemplatePath,
+      weeklyBoardPath: this.weeklyBoardPath,
     });
   }
 }

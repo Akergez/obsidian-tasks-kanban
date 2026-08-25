@@ -122,7 +122,10 @@ export function serializeBoardFile(board: BoardFile): string {
   if (board.columnOrder !== "") {
     lines.push(`columnOrder: ${scalar(board.columnOrder)}`);
   }
-  if (board.boardType === "date") {
+  // A week board has date columns too — the seven days of the week being
+  // looked at — so it carries the same two settings a date board does. What it
+  // does not carry is the days themselves: those are built at render time.
+  if (board.boardType === "date" || board.boardType === "week") {
     lines.push(`dateField: ${dateFieldKeyword(board.dateField)}`);
     // Written only when off: the catch-all is the default, and a file that says
     // nothing must keep reading as the board it was before the flag existed.
@@ -172,7 +175,7 @@ export function serializeBoardFile(board: BoardFile): string {
     }
   }
 
-  if (board.dateColumns.length > 0) {
+  if (board.dateColumns.length > 0 && board.boardType !== "week") {
     lines.push("", "dateColumns:");
     for (const column of board.dateColumns) {
       lines.push(`  - id: ${scalar(column.id)}`);

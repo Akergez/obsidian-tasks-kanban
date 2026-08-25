@@ -65,17 +65,20 @@ obsidian-tasks-kanban/
 │   │   ├── SearchBar.ts             # Title + tag filter bar
 │   │   ├── SortBar.ts               # Sort control
 │   │   ├── GroupBar.ts              # Grouping control
+│   │   ├── WeekBar.ts               # Week navigator, on a week board only
 │   │   ├── QueryModal.ts            # Raw query editor
 │   │   ├── BoardSettingsModal.ts    # One board's own settings, opened on the board
 │   │   └── BoardPickerModal.ts      # Saved-board picker
 │   ├── query/
 │   │   ├── boardQuery.ts            # Query parse/serialize/apply (filters+sort+group)
+│   │   ├── template.ts              # {{name}} substitution, for week boards
+│   │   ├── weeklyNote.ts            # The default weekly planner note
 │   │   └── boardFile.ts             # .kanban YAML board format (serialize/parse)
 │   ├── utils/
 │   │   ├── statusColumns.ts         # Default + custom column resolution
 │   │   ├── tagColumns.ts            # Tag-derived columns + tag rewriting
 │   │   ├── dateColumns.ts           # Day columns for a date board
-│   │   ├── weeklyBoard.ts           # ISO weeks + the weekly planner's board
+│   │   ├── weeklyBoard.ts           # ISO weeks: a week board's days and values
 │   │   ├── metaColumns.ts           # Meta columns: predicate + mutation columns
 │   │   ├── boardActions.ts          # Card-menu actions: named mutations
 │   │   ├── booleanFilter.ts         # (a) AND/OR/XOR (b), NOT (a) over filters
@@ -115,7 +118,7 @@ Getting there and back:
 
 `services/BoardRepository.ts` maps boards onto the vault for everything that is not the open board — the picker, the commands. A board note is any `.md` under the boards folder; the folder is the convention, since proving each file holds a block would mean reading every one of them.
 
-There is no fileless "base board" any more: every board is a note, so `data.json` keeps only what is shared across all of them (base query, base card colours, task format, the two folders, the template path).
+There is no fileless "base board" any more: every board is a note, so `data.json` keeps only what is shared across all of them (base query, base card colours, task format, the boards folder, the weekly planner's path).
 
 ### Tasks Integration
 
@@ -136,7 +139,7 @@ The plugin integrates with the [Tasks](https://github.com/obsidian-tasks-group/o
 
 Split by scope, and the split is load-bearing:
 
-- **Plugin settings** (`settings/SettingsTab.ts`) hold only what is shared across every board: task format, base query, base card colours, the two folders. It never lists boards — boards are files and a vault accumulates them (the weekly planner adds one a week), so a pane that listed them would scroll without end.
+- **Plugin settings** (`settings/SettingsTab.ts`) hold only what is shared across every board: task format, base query, base card colours, the boards folder and the weekly planner's path. It never lists boards — boards are files and a vault accumulates them, so a pane that listed them would scroll without end.
 - **A board's own settings** (`components/BoardSettingsModal.ts`) are opened from a gear button in the board header. The modal edits a `BoardSettingsDraft` copy and hands the whole thing back on Save, so Cancel really cancels and one Save is one write.
 
 `SettingsTab.getSettingDefinitions()` returns `[]` **on purpose**: Obsidian 1.13 skips `display()` whenever it returns anything, and filling it in is how the per-board settings once went missing entirely.
@@ -152,11 +155,12 @@ The base board returns `""` from `getBaseCardColors()` — its own rules *are* t
 
 ### Board Types and Columns
 
-A board's `boardType` (`status` | `tag` | `date`, in `types/persistence.ts`) is an **explicit** setting, never inferred from which other field happens to be filled in. `KanbanBoard.resolveColumnConfigs` switches on it:
+A board's `boardType` (`status` | `tag` | `date` | `week`, in `types/persistence.ts`) is an **explicit** setting, never inferred from which other field happens to be filled in. `KanbanBoard.resolveColumnConfigs` switches on it:
 
 - **Status columns** (`utils/statusColumns.ts`) — the default. One column per status type, or a user-defined partition over status symbols. A drop writes the column's `dropSymbol`.
 - **Tag columns** (`utils/tagColumns.ts`) — columns are discovered from the tasks' `#<prefix>_<column>` tags: those named in the board's `columnOrder` come first in that order, the rest follow alphabetically, and a catch-all for untagged tasks leads. A drop rewrites the tag via `TaskUpdater.updateTaskColumnTag` and leaves the status alone. With no prefix set yet there is nothing to discover from, so the board falls back to status columns.
 - **Date columns** (`utils/dateColumns.ts`) — one column per configured exact day (`YYYY-MM-DD`) on one `dateField`, led by a "No date" catch-all unless the board's `noDateColumn` turns it off (it defaults on, so a board written before the flag keeps every column it had). Unlike tag columns these are *configured, not discovered*, which is what makes a task dated outside every column **hidden**. A drop writes that day via `TaskUpdater.updateTaskDate` (the catch-all clears the field) and leaves the status alone.
+- **Week columns** (`utils/weeklyBoard.ts`) — date columns whose seven days are *not stored*: they are built for the week the board is showing, every time it is drawn, which is what lets one note be the board for every week. Everything else about them — matching, dropping, the catch-all — is a date column's, and the days are handed to the same `buildDateColumns`. See [Weekly Planner](#weekly-planner) for the rest, including the `{{week}}` substitution that comes with the type.
 
 On top of its type's columns a board may carry any number of **meta columns** (`utils/metaColumns.ts`, configured per board in the settings modal):
 
@@ -166,25 +170,32 @@ On top of its type's columns a board may carry any number of **meta columns** (`
 
 A board also carries **card actions** (`utils/boardActions.ts`): named mutations, in the same language, offered by `KanbanCard` in an Obsidian `Menu` on right-click and applied through the same `TaskUpdater.applyMutation`. Dropping a card and picking a command are the same act with different triggers, which is why they share a language; what differs is that a column mutates what is dropped into it and an action mutates what is asked. They ride to the cards alongside the colour rules (`KanbanLane.updateTasks` → `KanbanColumn.updateTasks` → `KanbanCard`), so a settings change reaches them on the next render. A board with no actions does not touch the contextmenu event.
 
-`columnCollects` (in `utils/columnMatch.ts`) is the single matcher for all four modes; `KanbanLane` and `KanbanColumn`'s drop handler go through it, so distribution and drops can't disagree.
+`columnCollects` (in `utils/columnMatch.ts`) is the single matcher for every mode; `KanbanLane` and `KanbanColumn`'s drop handler go through it, so distribution and drops can't disagree.
 
 `resolveBoardType` handles boards written before types were explicit: no `boardType` key means the old implicit rule applies (a `columnTagPrefix` ⇒ tag board, otherwise status).
 
 ### Weekly Planner
 
-The ribbon's calendar button calls `TasksKanbanPlugin.openWeeklyPlanner`. The planner is **not built in code**: `query/weeklyTemplate.ts` holds a template *note*, written to `weeklyTemplatePath` (the vault root by default) the first time it is needed and editable from there — so which columns a week has, what its pool collects and which actions its cards offer belong to whoever edits that file.
+The ribbon's calendar button calls `TasksKanbanPlugin.openWeeklyPlanner`, which does one thing: make sure the note at `weeklyBoardPath` (`Kanban/Weekly.md` by default) exists — writing `DEFAULT_WEEKLY_NOTE` from `query/weeklyNote.ts` when it does not — and open it. There is **one** planner note and it is never rewritten after that: it is the user's document.
 
-`utils/weeklyBoard.ts` is pure and now supplies only the week's *values*: `startOfWeek` (Monday-based, unlike the Sunday-based `in this week` query filter, which follows Tasks), `isoWeekName` (`2026-W35`, decided by the week's Thursday) and `weekVariables`, the substitution map `query/template.ts` applies. Neighbouring weeks are given as their own number/year pairs (`nextWeek`/`nextYear`) rather than left to arithmetic: week 53 of 2026 is followed by week 1 of **2027**. Week numbers come in two spellings because both are in use — `{{week}}` unpadded for the tag (`#w5_2026`), `{{ww}}` padded for the name (`2026-W05`). An unknown placeholder is reported and left standing in the note, never blanked.
+It is one note for every week because it is a **week board** (`boardType: week`), the one board type whose columns are not in its file. Nothing in it names a week:
 
-The note's **name** stays the plugin's to decide (`<weeklyPlannerFolder>/2026-W35.md`): it is what makes "this week's board" findable without first rendering and parsing the template.
+- Its seven day columns are built by `weekColumns(monday)` at render time, from the week the board is showing.
+- Its filters, mutations and colour rules are stored with `{{week}}`/`{{monday}}` still in them and are rendered on the way to the screen — `KanbanBoard.forWeek` — never on the way to the file. Persisting a fold therefore writes the placeholders back untouched, which is the invariant the whole design rests on.
 
-The default template is a date board with no "No date" catch-all — its columns are the seven weekdays, led by the `Unplanned` meta column, which already holds the undated work worth seeing: unfinished tasks with no day, or with a day **older than this week's Monday**, minus anything carrying another week's preplanning tag. The threshold is the week's start, not today — a planner filtered on `before today` would empty its own earlier days as the week ran on: unfinished work with no day, or a day already past. Its mutation (`set not done`, `clear <field> date`) is the exact undoing of a drop into a weekday, so dragging a card out of the week returns it to the pool rather than leaving it dated in the past. Both are written against the planner's own date field.
+Which week is showing is `KanbanBoard.weekOffset`, deliberately the only board state that never reaches the file: a planner opens on the week you are in. `components/WeekBar.ts` renders `‹ 2026-W35 ›` (hidden on every other board type, via `setWeek(null)`), reports a step, and is told what to say afterwards by `syncWeekBar` — the week lives in the board, not in two places that must agree. A step re-renders: `rebuildForWeek` re-parses the actions and colour rules for the new week, and the changed column dates make `renderLanes` rebuild the lanes.
 
-The template spells a week's **preplanning tag** out of `{{week}}` and `{{year}}` (`weekTag` in code documents the same shape) (`#w35_2026`, ISO week and week-year, unpadded). A task carrying one is assigned to that week without a day; the pool's third filter line — `(tag regex matches /^#w0*35_2026$/) OR NOT (tag regex matches /^#w\d+_\d{4}$/)` — keeps other weeks' work out. It is written in the query language rather than in matching code, so it is visible in the board file and editable there; `tag regex matches` was added to the language for it.
+The **query** is not templated, and that is a decision rather than an omission: the bars edit it as structure and write it back, so a placeholder there would be parsed away the first time someone typed in the search box. A week board narrows itself by its columns instead.
 
-The template puts three commands on every card's menu: **Next week** (clear the day, drop this week's tag, add next week's — so the card leaves this board for the next week's planner), **Cancel** (`set status.type CANCELLED`) and **Done** (`set done`).
+Column ids are the weekday (`week:saturday`), not the date, so a fold survives paging; the titles carry the date (`Saturday 29 Aug`) because "Saturday" alone says nothing three weeks out. `KanbanColumn` marks the column whose day is today, which is how a board of seven weekdays says where you are.
 
-The week name is the file name, so identity is positional, not stored: `BoardRepository.ensure` writes the file only when it is absent, which is what makes reopening mid-week return the board with its edits rather than a regenerated one. The folder comes from `weeklyPlannerFolder`, nested under `boardsFolder` by default so weekly boards still appear in the picker.
+`utils/weeklyBoard.ts` is pure and supplies the week's *values*: `startOfWeek` (Monday-based, unlike the Sunday-based `in this week` query filter, which follows Tasks), `isoWeekName` (`2026-W35`, decided by the week's Thursday — the navigator's label), `addWeeks`, `weekColumns`, `weekRange`, and `weekVariables`, the substitution map `query/template.ts` applies through `renderWeek`. Neighbouring weeks are given as their own number/year pairs (`nextWeek`/`nextYear`) rather than left to arithmetic: week 53 of 2026 is followed by week 1 of **2027**. Week numbers come in two spellings because both are in use — `{{week}}` unpadded for the tag (`#w5_2026`), `{{ww}}` padded for an ISO name (`2026-W05`). An unknown placeholder is left standing rather than blanked, so a typo shows up where it was written.
+
+The default note is a week board with no "No date" catch-all — its columns are the seven weekdays, led by the `Unplanned` meta column, which already holds the undated work worth seeing: unfinished tasks with no day, or with a day **older than the shown week's Monday**, minus anything carrying another week's preplanning tag. The threshold is the week's start, not today — a planner filtered on `before today` would empty its own earlier days as the week ran on. Its mutation (`set not done`, `clear <field> date`) is the exact undoing of a drop into a weekday, so dragging a card out of the week returns it to the pool rather than leaving it dated in the past. Both are written against the planner's own date field.
+
+The note spells a week's **preplanning tag** out of `{{week}}` and `{{year}}` (`weekTag` in code documents the same shape) (`#w35_2026`, ISO week and week-year, unpadded). A task carrying one is assigned to that week without a day; the pool's third filter line — `(tag regex matches /^#w0*{{week}}_{{year}}$/) OR NOT (tag regex matches /^#w\d+_\d{4}$/)` — keeps other weeks' work out. It is written in the query language rather than in matching code, so it is visible in the board file and editable there; `tag regex matches` was added to the language for it.
+
+The note puts three commands on every card's menu: **Next week** (clear the day, drop this week's tag, add next week's — so the card leaves this week and turns up when you page forward), **Cancel** (`set status.type CANCELLED`) and **Done** (`set done`).
 
 ### Writing Dates
 

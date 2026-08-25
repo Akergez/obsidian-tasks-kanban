@@ -6,6 +6,7 @@ import { KanbanLane } from "./KanbanLane";
 import { SearchBar } from "./SearchBar";
 import { SortBar } from "./SortBar";
 import { GroupBar } from "./GroupBar";
+import { WeekBar } from "./WeekBar";
 import { QueryModal } from "./QueryModal";
 import {
   BoardSettingsModal,
@@ -15,6 +16,12 @@ import { resolveColumns } from "../utils/statusColumns";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
 import { buildTagColumns, parseColumnOrder } from "../utils/tagColumns";
 import { buildDateColumns } from "../utils/dateColumns";
+import {
+  addWeeks,
+  renderWeek,
+  startOfWeek,
+  weekColumns,
+} from "../utils/weeklyBoard";
 import { buildMetaColumns } from "../utils/metaColumns";
 import { buildBoardActions, type BoardAction } from "../utils/boardActions";
 import type { DateField } from "../utils/dateFilter";
@@ -64,6 +71,7 @@ export class KanbanBoard {
   private searchBar: SearchBar;
   private sortBar: SortBar;
   private groupBar: GroupBar;
+  private weekBar: WeekBar;
   private persistence: BoardStatePersistence;
   /** Every task last received, exactly as the cache handed it over. */
   private rawTasks: Task[] = [];
@@ -81,6 +89,15 @@ export class KanbanBoard {
   private collapsedGroups: Set<string>;
   /** Which kind of columns this board has. Set in settings. */
   private boardType: BoardType;
+  /**
+   * How many weeks away from this one a week board is showing; 0 is the week we
+   * are in.
+   *
+   * Deliberately *not* persisted: a planner should open on the week you are in,
+   * whatever you were looking at last time. It is also the only board state
+   * that never reaches the file — which is the whole point of a week board.
+   */
+  private weekOffset = 0;
   /** Custom columns for this board; empty ⇒ default status columns. */
   private columnConfigs: ColumnConfig[];
   /** Meta columns for this board, rendered before the type's columns. */
@@ -134,14 +151,13 @@ export class KanbanBoard {
     this.columnConfigs = initial.columns;
     this.metaColumns = initial.metaColumns;
     this.actionConfigs = initial.actions;
-    this.actions = buildBoardActions(this.actionConfigs);
     this.columnTagPrefix = initial.columnTagPrefix;
     this.columnOrder = initial.columnOrder;
     this.dateField = initial.dateField;
     this.dateColumns = initial.dateColumns;
     this.noDateColumn = initial.noDateColumn;
     this.cardColors = initial.cardColors;
-    this.colorRules = this.buildColorRules();
+    this.rebuildForWeek();
 
     // Search, sort, and query-edit controls sit above the board in a shared row.
     const header = this.container.createDiv({ cls: "tasks-kanban-header" });
@@ -185,6 +201,13 @@ export class KanbanBoard {
       },
       getGroup(this.boardQuery),
     );
+
+    // Only a week board shows it; setWeek hides it on every other kind.
+    this.weekBar = new WeekBar(header, {
+      step: (delta) => this.stepWeek(delta),
+      today: () => this.showWeek(0),
+    });
+    this.syncWeekBar();
 
     this.createQueryButton(header);
     this.createSettingsButton(header);
@@ -289,9 +312,9 @@ export class KanbanBoard {
         this.columnConfigs = next.columns;
         this.metaColumns = next.metaColumns;
         this.actionConfigs = next.actions;
-        this.actions = buildBoardActions(this.actionConfigs);
         this.cardColors = next.cardColors;
-        this.colorRules = this.buildColorRules();
+        this.rebuildForWeek();
+        this.syncWeekBar();
         this.searchBar.setState({
           titleQuery: getTitle(this.boardQuery),
           selectedTags: getTags(this.boardQuery),
@@ -317,10 +340,84 @@ export class KanbanBoard {
    */
   private buildColorRules(): ColorRule[] {
     const shared = this.persistence.getBaseCardColors();
-    const lines = [this.cardColors, shared].filter(
+    const lines = [this.forWeek(this.cardColors), shared].filter(
       (value) => value.trim() !== "",
     );
     return parseColorRules(lines.join("\n")).rules;
+  }
+
+  /**
+   * The Monday of the week this board is showing, or null when it is not a week
+   * board — which is also the one test for "does any of this apply".
+   */
+  private weekMonday(): Date | null {
+    if (this.boardType !== "week") {
+      return null;
+    }
+    return addWeeks(startOfWeek(new Date()), this.weekOffset);
+  }
+
+  /**
+   * Substitute the shown week's values into a templated field, or hand it back
+   * untouched on any other kind of board.
+   *
+   * Only fields the board stores as *text* go through here — filters,
+   * mutations, colour rules. The query is not one of them: the bars edit it as
+   * structure and write it back, so a placeholder put there would be parsed
+   * away the first time someone typed in the search box. A week board scopes
+   * itself by its columns instead, which is what makes that unnecessary.
+   */
+  private forWeek(text: string): string {
+    const monday = this.weekMonday();
+    return monday ? renderWeek(text, monday) : text;
+  }
+
+  /**
+   * Rebuild everything that is rendered *for a week*: the card actions and the
+   * colour rules. Called wherever their raw text changes, and whenever the week
+   * does — the two are the same event as far as the board is concerned.
+   */
+  private rebuildForWeek(): void {
+    this.actions = buildBoardActions(
+      this.actionConfigs.map((action) => ({
+        ...action,
+        mutation: this.forWeek(action.mutation),
+      })),
+    );
+    this.colorRules = this.buildColorRules();
+  }
+
+  /**
+   * Go back to the week we are in, for a board that has just been handed a
+   * different note (Obsidian reuses a leaf, and with it this component): the
+   * week you had paged to belonged to the board that left.
+   */
+  resetWeek(): void {
+    this.showWeek(0);
+  }
+
+  /** Page the board `delta` weeks and re-render. */
+  private stepWeek(delta: number): void {
+    this.showWeek(this.weekOffset + delta);
+  }
+
+  /**
+   * Show the week `offset` weeks from this one. Nothing is persisted: which
+   * week you are looking at is not part of the board (see {@link weekOffset}).
+   */
+  private showWeek(offset: number): void {
+    if (offset === this.weekOffset) {
+      return;
+    }
+    this.weekOffset = offset;
+    this.rebuildForWeek();
+    this.syncWeekBar();
+    this.applyQuery();
+  }
+
+  /** Point the navigator at the week now being shown, or hide it. */
+  private syncWeekBar(): void {
+    this.weekBar.setWeek(this.weekMonday(), this.weekOffset === 0);
   }
 
   /**
@@ -426,14 +523,14 @@ export class KanbanBoard {
     this.columnConfigs = state.columns;
     this.metaColumns = state.metaColumns;
     this.actionConfigs = state.actions;
-    this.actions = buildBoardActions(this.actionConfigs);
     this.columnTagPrefix = state.columnTagPrefix;
     this.columnOrder = state.columnOrder;
     this.dateField = state.dateField;
     this.dateColumns = state.dateColumns;
     this.noDateColumn = state.noDateColumn;
     this.cardColors = state.cardColors;
-    this.colorRules = this.buildColorRules();
+    this.rebuildForWeek();
+    this.syncWeekBar();
     this.searchBar.setState({
       titleQuery: getTitle(this.boardQuery),
       selectedTags: getTags(this.boardQuery),
@@ -477,11 +574,26 @@ export class KanbanBoard {
    * falls back to status columns until one is configured.
    */
   private resolveColumnConfigs(): KanbanColumnConfig[] {
-    return [...buildMetaColumns(this.metaColumns), ...this.typeColumnConfigs()];
+    const metaColumns = this.metaColumns.map((column) => ({
+      ...column,
+      filter: this.forWeek(column.filter),
+      mutation: this.forWeek(column.mutation),
+    }));
+    return [...buildMetaColumns(metaColumns), ...this.typeColumnConfigs()];
   }
 
   /** The columns of the board's own type, without the meta columns. */
   private typeColumnConfigs(): KanbanColumnConfig[] {
+    const monday = this.weekMonday();
+    if (monday) {
+      // Built for the week being shown, never read from the file: this is what
+      // one note being every week's board comes down to.
+      return buildDateColumns(
+        this.dateField,
+        weekColumns(monday),
+        this.noDateColumn,
+      );
+    }
     if (this.boardType === "date") {
       return buildDateColumns(
         this.dateField,
@@ -565,6 +677,7 @@ export class KanbanBoard {
     this.searchBar.destroy();
     this.sortBar.destroy();
     this.groupBar.destroy();
+    this.weekBar.destroy();
     for (const lane of this.lanes) {
       lane.destroy();
     }

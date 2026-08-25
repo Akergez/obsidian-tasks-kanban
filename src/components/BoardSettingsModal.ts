@@ -63,12 +63,21 @@ const BOARD_TYPE_LABELS: Record<BoardType, string> = {
   status: "Status columns",
   tag: "Tag columns",
   date: "Date columns",
+  week: "Week columns",
 };
 
 const BOARD_TYPE_DESC =
   "What the columns of this board are. Status: one column per status type, or " +
   "your own partition over status symbols. Tag: one column per #<prefix>_<column> " +
-  "tag on your tasks. Date: one column per day you name, on one date field.";
+  "tag on your tasks. Date: one column per day you name, on one date field. " +
+  "Week: the seven days of whichever week you are looking at.";
+
+const WEEK_COLUMNS_DESC =
+  "The columns are Monday to Sunday of the week the arrows above the board are " +
+  "pointing at — this board fixes no week, so it is the planner for all of " +
+  "them. In the filters, mutations and colour rules below, {{week}}, {{year}} " +
+  "and {{monday}} (also {{ww}}, {{nextWeek}}, {{nextYear}}, {{tuesday}}…) stand " +
+  "for that week and are substituted when the board is drawn, never in the file.";
 
 const TAG_PREFIX_DESC =
   "Shared prefix of this board's column tags (e.g. 'sprint'): one column per " +
@@ -492,6 +501,10 @@ export class BoardSettingsModal extends Modal {
       this.renderDateColumnFields(containerEl);
       return;
     }
+    if (this.draft.boardType === "week") {
+      this.renderWeekColumnFields(containerEl);
+      return;
+    }
     this.renderStatusColumnFields(containerEl);
   }
 
@@ -521,31 +534,20 @@ export class BoardSettingsModal extends Modal {
       });
   }
 
-  private renderDateColumnFields(containerEl: HTMLElement): void {
-    new Setting(containerEl)
-      .setName("Date field")
-      .setDesc(DATE_FIELD_DESC)
-      .addDropdown((dropdown) => {
-        const options: Record<string, string> = {};
-        for (const field of DATE_FIELDS) {
-          options[field] = DATE_FIELD_LABELS[field];
-        }
-        dropdown
-          .addOptions(options)
-          .setValue(this.draft.dateField)
-          .onChange((value) => {
-            this.draft.dateField = value as DateField;
-          });
-      });
+  /**
+   * Week boards: the same two settings a date board has, and no day editor —
+   * the seven days are built for the week being shown, so there is nothing here
+   * to configure and nothing in the file to get out of date.
+   */
+  private renderWeekColumnFields(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Week columns").setDesc(WEEK_COLUMNS_DESC);
+    this.renderDateFieldField(containerEl);
+    this.renderNoDateColumnField(containerEl);
+  }
 
-    new Setting(containerEl)
-      .setName("No date column")
-      .setDesc(NO_DATE_COLUMN_DESC)
-      .addToggle((toggle) => {
-        toggle.setValue(this.draft.noDateColumn).onChange((value) => {
-          this.draft.noDateColumn = value;
-        });
-      });
+  private renderDateColumnFields(containerEl: HTMLElement): void {
+    this.renderDateFieldField(containerEl);
+    this.renderNoDateColumnField(containerEl);
 
     new Setting(containerEl)
       .setName("Date columns")
@@ -596,6 +598,37 @@ export class BoardSettingsModal extends Modal {
     }
 
     this.validateDateColumns(errorEl);
+  }
+
+  /** The date field date and week columns alike are days of. */
+  private renderDateFieldField(containerEl: HTMLElement): void {
+    new Setting(containerEl)
+      .setName("Date field")
+      .setDesc(DATE_FIELD_DESC)
+      .addDropdown((dropdown) => {
+        const options: Record<string, string> = {};
+        for (const field of DATE_FIELDS) {
+          options[field] = DATE_FIELD_LABELS[field];
+        }
+        dropdown
+          .addOptions(options)
+          .setValue(this.draft.dateField)
+          .onChange((value) => {
+            this.draft.dateField = value as DateField;
+          });
+      });
+  }
+
+  /** The "No date" catch-all toggle, shared by date and week boards. */
+  private renderNoDateColumnField(containerEl: HTMLElement): void {
+    new Setting(containerEl)
+      .setName("No date column")
+      .setDesc(NO_DATE_COLUMN_DESC)
+      .addToggle((toggle) => {
+        toggle.setValue(this.draft.noDateColumn).onChange((value) => {
+          this.draft.noDateColumn = value;
+        });
+      });
   }
 
   /** Reject unusable days: a blank one, a non-date, or a repeated one. */

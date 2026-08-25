@@ -1,3 +1,5 @@
+import { renderTemplate } from "../query/template";
+import type { DateColumnConfig } from "../types/persistence";
 import { todayISO } from "./dateColumns";
 
 /** Column titles for the seven days, Monday first. */
@@ -34,8 +36,8 @@ export function startOfWeek(date: Date): Date {
  * year come out right: the week of 2027-01-01 is `2026-W53`, and the week of
  * 2025-12-29 is already `2026-W01`.
  *
- * Sortable, unambiguous, and stable — it is the planner's identity, so opening
- * the planner twice in one week finds the same file rather than making another.
+ * Sortable and unambiguous, which is what makes it the label the week
+ * navigator shows above a week board.
  */
 export function isoWeekName(monday: Date): string {
   const thursday = new Date(
@@ -70,10 +72,10 @@ export function weekDays(monday: Date): string[] {
  * 2026" without committing it to a day. Written by hand in the note, or by a
  * board action, and read by the planner's pool to keep other weeks' work out.
  *
- * The tag is not built here — the weekly template spells it out of
+ * The tag is not built here — a week board spells it out of
  * {@link weekVariables} (`#w{{week}}_{{year}}`), so the shape of the tag is the
  * user's to change. This function exists for tests and for documenting the one
- * spelling the default template uses.
+ * spelling the default weekly board uses.
  */
 export function weekTag(monday: Date): string {
   const { week, year } = weekVariables(monday);
@@ -92,11 +94,11 @@ function dayAfter(monday: Date, offset: number): string {
 }
 
 /**
- * The values a weekly template can substitute — everything about a week that a
+ * The values a week board can substitute — everything about a week that a
  * board document might need to name.
  *
  * The neighbouring weeks are given as their own number/year pairs rather than
- * left to arithmetic in the template: week 53 of 2026 is followed by week 1 of
+ * left to arithmetic in the document: week 53 of 2026 is followed by week 1 of
  * **2027**, so `{{week}} + 1` would be wrong exactly when it matters.
  *
  * Week numbers come in two spellings because both are in use: the tag is
@@ -134,4 +136,74 @@ export function weekVariables(monday: Date): Record<string, string> {
     ...days,
     nextMonday: dayAfter(monday, 7),
   };
+}
+
+/** The Monday `count` weeks after `monday` (negative counts go back). */
+export function addWeeks(monday: Date, count: number): Date {
+  return new Date(
+    monday.getFullYear(),
+    monday.getMonth(),
+    monday.getDate() + count * 7,
+  );
+}
+
+/**
+ * Month names, spelled out here rather than through `toLocaleDateString`, so a
+ * column header reads the same on every machine — and so a test can assert it.
+ */
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** A `YYYY-MM-DD` day as `24 Aug`, for a column header. */
+function dayLabel(iso: string): string {
+  const [, month, day] = iso.split("-");
+  return `${Number(day)} ${MONTHS[Number(month) - 1]}`;
+}
+
+/**
+ * The seven day columns of the week starting at `monday`.
+ *
+ * A week board keeps no columns in its file — these are built for whichever
+ * week is being looked at, which is what lets one note serve every week. The
+ * ids are the weekday, not the date, so folding Saturday keeps it folded as you
+ * page through the weeks; the titles carry the date, because "Monday" alone
+ * says nothing once you have paged three weeks back.
+ */
+export function weekColumns(monday: Date): DateColumnConfig[] {
+  return weekDays(monday).map((date, offset) => ({
+    id: `week:${WEEKDAY_TITLES[offset].toLowerCase()}`,
+    title: `${WEEKDAY_TITLES[offset]} ${dayLabel(date)}`,
+    date,
+  }));
+}
+
+/** The week as a span of days, e.g. `24 Aug – 30 Aug 2026`. */
+export function weekRange(monday: Date): string {
+  const days = weekDays(monday);
+  return `${dayLabel(days[0])} – ${dayLabel(days[6])} ${days[6].slice(0, 4)}`;
+}
+
+/**
+ * Substitute a week's values into one templated field of a week board.
+ *
+ * This is what makes a week board a board for *every* week: its filters,
+ * mutations and colour rules are stored with `{{week}}`/`{{monday}}` still in
+ * them, and are rendered on the way to the screen — never on the way to the
+ * file. Errors are dropped rather than reported: an unknown placeholder is left
+ * standing (see {@link renderTemplate}), so it shows up where it was written.
+ */
+export function renderWeek(text: string, monday: Date): string {
+  return renderTemplate(text, weekVariables(monday)).text;
 }

@@ -53,16 +53,23 @@ describe("BoardIcons", () => {
     ).toBeNull();
   });
 
-  it("uses Obsidian's own row badge, so it cannot collide with a file icon", () => {
+  it("puts the icon first in the row, in front of the name", () => {
+    // Not last: Obsidian's own trailing badge is the small text one showing a
+    // file's extension, which is where the icon ended up after the name.
     explorer(["Kanban/Sprint.md"]);
     icons(["Kanban/Sprint.md"]).apply();
 
-    const badge = row("Kanban/Sprint.md").querySelector(`.${BOARD_TAG_CLASS}`);
-    expect(badge?.classList.contains("nav-file-tag")).toBe(true);
-    // The icon the theme drew is still there, untouched.
-    const fileIcon =
-      row("Kanban/Sprint.md").querySelector<HTMLElement>(".nav-file-icon");
-    expect(fileIcon?.style.display).toBe("");
+    const first = row("Kanban/Sprint.md").firstElementChild;
+    expect(first?.classList.contains(BOARD_TAG_CLASS)).toBe(true);
+    expect(first?.classList.contains("nav-file-tag")).toBe(false);
+  });
+
+  it("puts a real icon in it, not a bare element", () => {
+    explorer(["Kanban/Sprint.md"]);
+    icons(["Kanban/Sprint.md"]).apply();
+
+    const icon = row("Kanban/Sprint.md").querySelector(`.${BOARD_TAG_CLASS}`);
+    expect(icon?.getAttribute("aria-label")).toBe("Kanban board");
   });
 
   it("flags the row too, for themes that want to style it", () => {

@@ -13,8 +13,12 @@ import {
  *   status symbols ({@link ColumnConfig}).
  * - `tag`: one column per `#<prefix>_<column>` tag found on the tasks.
  * - `date`: one column per configured calendar day ({@link DateColumnConfig}).
+ * - `week`: the seven days of **the week you are looking at**, built at render
+ *   time rather than stored, so one note is the board for every week. Its
+ *   filters, mutations and colour rules may carry `{{week}}`-style placeholders,
+ *   substituted for that week on the way to the screen (see utils/weeklyBoard).
  */
-export type BoardType = "status" | "tag" | "date";
+export type BoardType = "status" | "tag" | "date" | "week";
 
 /** The board type a board gets when it does not say. */
 export const DEFAULT_BOARD_TYPE: BoardType = "status";
@@ -30,7 +34,7 @@ export function resolveBoardType(
   raw: unknown,
   columnTagPrefix: string,
 ): BoardType {
-  if (raw === "status" || raw === "tag" || raw === "date") {
+  if (raw === "status" || raw === "tag" || raw === "date" || raw === "week") {
     return raw;
   }
   return columnTagPrefix.trim() === "" ? DEFAULT_BOARD_TYPE : "tag";
@@ -142,10 +146,12 @@ export interface PluginData {
   baseCardColors: string;
   /** Vault folder the board notes live in; "" ⇒ the vault root. */
   boardsFolder: string;
-  /** Vault folder the weekly planner's notes live in; "" ⇒ the vault root. */
-  weeklyPlannerFolder: string;
-  /** The note the weekly planner is rendered from. */
-  weeklyTemplatePath: string;
+  /**
+   * The note holding the weekly planner — one note for every week, since a week
+   * board fixes no week (see {@link BoardType}). Created from the default the
+   * first time the planner is opened, and the user's from then on.
+   */
+  weeklyBoardPath: string;
 }
 
 export const DEFAULT_PLUGIN_DATA: PluginData = {
@@ -153,11 +159,9 @@ export const DEFAULT_PLUGIN_DATA: PluginData = {
   taskFormat: DEFAULT_TASK_FORMAT_SETTING,
   baseCardColors: "",
   boardsFolder: "Kanban",
-  // Nested inside the boards folder by default, so weekly boards also show up
-  // in the board picker.
-  weeklyPlannerFolder: "Kanban/Weekly",
-  // In the vault root, where it is easy to find and open; move it anywhere.
-  weeklyTemplatePath: "Tasks Kanban weekly template.md",
+  // Inside the boards folder, so the planner shows up in the board picker like
+  // any other board — which is all it is.
+  weeklyBoardPath: "Kanban/Weekly.md",
 };
 
 /**
