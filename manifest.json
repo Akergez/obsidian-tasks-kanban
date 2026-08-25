@@ -1,7 +1,7 @@
 {
   "id": "tasks-kanban-tags",
   "name": "Tasks Kanban Tags",
-  "version": "0.16.1",
+  "version": "0.16.2",
   "description": "Display Tasks in a Kanban board view with columns built from tags or statuses.",
   "author": "Akergez",
   "authorUrl": "https://github.com/Akergez",
