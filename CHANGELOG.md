@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.19.0...0.20.0) (2026-08-25)
+
+
+### Features
+
+* more info ([15cdd20](https://github.com/Akergez/obsidian-tasks-kanban/commit/15cdd203fca20d90ff00f67c3ff8e7801afcd499))
+
 ## [0.19.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.18.4...0.19.0) (2026-08-25)
 
 
