@@ -5,6 +5,7 @@ import type { KanbanColumnConfig } from "../utils/statusColumns";
 import { columnCollects } from "../utils/columnMatch";
 import type { ColorRule } from "../utils/cardColors";
 import type { SubTask } from "../utils/taskHierarchy";
+import type { BoardAction } from "../utils/boardActions";
 
 /**
  * A single swimlane: an optional header (the group label) above a horizontal row
@@ -88,6 +89,7 @@ export class KanbanLane {
     tasks: Task[],
     colorRules: ColorRule[] = [],
     subTasksOf: Map<string, SubTask[]> = new Map(),
+    actions: BoardAction[] = [],
   ): void {
     const byColumn = this.columns.map<Task[]>(() => []);
 
@@ -101,7 +103,7 @@ export class KanbanLane {
     }
 
     this.columns.forEach((column, index) => {
-      column.updateTasks(byColumn[index], colorRules, subTasksOf);
+      column.updateTasks(byColumn[index], colorRules, subTasksOf, actions);
     });
   }
 

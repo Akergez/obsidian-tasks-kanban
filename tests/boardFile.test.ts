@@ -143,6 +143,21 @@ describe("round trip", () => {
     expect(roundTrip(input)).toEqual(input);
   });
 
+  it("preserves card actions", () => {
+    const input = board({
+      actions: [
+        { id: "action:done", title: "Done", mutation: "set done" },
+        {
+          id: "action:next-week",
+          title: "Next week",
+          mutation:
+            "clear scheduled date\nremove tag #w35_2026\nadd tag #w36_2026",
+        },
+      ],
+    });
+    expect(roundTrip(input)).toEqual(input);
+  });
+
   it("preserves a date board", () => {
     const input = board({
       name: "This week",
@@ -243,6 +258,35 @@ describe("parseBoardFile", () => {
         mutation: "set not done\nclear scheduled date",
       },
     ]);
+  });
+
+  it("reads hand-written actions", () => {
+    const { board: parsed, errors } = parseBoardFile(
+      [
+        "actions:",
+        "  - id: action:done",
+        "    title: Done",
+        "    mutation: set done",
+      ].join("\n"),
+      "fallback",
+    );
+    expect(errors).toEqual([]);
+    expect(parsed.actions).toEqual([
+      { id: "action:done", title: "Done", mutation: "set done" },
+    ]);
+  });
+
+  it("drops an action with no mutation, which would do nothing", () => {
+    const { board: parsed } = parseBoardFile(
+      ["actions:", "  - id: action:noop", "    title: Nothing"].join("\n"),
+      "fallback",
+    );
+    expect(parsed.actions).toEqual([]);
+  });
+
+  it("reports an actions key that is not a list", () => {
+    const { errors } = parseBoardFile("actions: nope", "fallback");
+    expect(errors).toEqual(["`actions` must be a list; ignoring it."]);
   });
 
   it("drops a meta column with no filter, which could collect nothing", () => {

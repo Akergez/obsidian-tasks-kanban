@@ -7,6 +7,47 @@ import { parse as parseYamlImpl, stringify as stringifyYamlImpl } from "yaml";
 //
 // parseYaml/stringifyYaml delegate to the real `yaml` package rather than a
 // stub, so the board-file format is exercised against a genuine YAML parser.
+/**
+ * Obsidian's context menu, reduced to what the cards use. `Menu.lastMenu` is
+ * how a test reads back what a card offered on right-click.
+ */
+class MenuItemStub {
+  title = "";
+  icon: string | null = null;
+  clickHandler: (() => void) | null = null;
+  setTitle(title: string) {
+    this.title = title;
+    return this;
+  }
+  setIcon(icon: string) {
+    this.icon = icon;
+    return this;
+  }
+  onClick(handler: () => void) {
+    this.clickHandler = handler;
+    return this;
+  }
+}
+
+class MenuStub {
+  static lastMenu: MenuStub | null = null;
+  items: MenuItemStub[] = [];
+  shownAt: unknown = null;
+  constructor() {
+    MenuStub.lastMenu = this;
+  }
+  addItem(build: (item: MenuItemStub) => unknown) {
+    const item = new MenuItemStub();
+    build(item);
+    this.items.push(item);
+    return this;
+  }
+  showAtMouseEvent(event: unknown) {
+    this.shownAt = event;
+    return this;
+  }
+}
+
 vi.mock("obsidian", () => ({
   Plugin: class {},
   ItemView: class {},
@@ -20,6 +61,7 @@ vi.mock("obsidian", () => ({
   TFile: class {},
   TFolder: class {},
   setTooltip: vi.fn(),
+  Menu: MenuStub,
   normalizePath: (path: string) => normalizePathImpl(path),
   parseYaml: (input: string) => parseYamlImpl(input),
   stringifyYaml: (value: unknown) => stringifyYamlImpl(value),

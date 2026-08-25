@@ -3,8 +3,10 @@ import { App, Modal, Setting } from "obsidian";
 import { parseQuery } from "../query/boardQuery";
 import { parseColorRules } from "../utils/cardColors";
 import { metaColumnErrors } from "../utils/metaColumns";
+import { boardActionErrors } from "../utils/boardActions";
 import type { StatusInfo } from "../services/TasksIntegration";
 import type {
+  BoardActionConfig,
   BoardType,
   ColumnConfig,
   DateColumnConfig,
@@ -35,6 +37,7 @@ export interface BoardSettingsDraft {
   noDateColumn: boolean;
   columns: ColumnConfig[];
   metaColumns: MetaColumnConfig[];
+  actions: BoardActionConfig[];
   cardColors: string;
 }
 
@@ -102,6 +105,13 @@ const META_FILTER_PLACEHOLDER = [
 const META_MUTATION_PLACEHOLDER = ["set not done", "clear scheduled date"].join(
   "\n",
 );
+
+const ACTIONS_DESC =
+  "Named mutations offered in a card's right-click menu on this board. Same " +
+  "language as a meta column's mutation — moving a card and picking a command " +
+  "off a menu are the same act, said two ways.";
+
+const ACTION_MUTATION_PLACEHOLDER = ["set done"].join("\n");
 
 const CARD_COLORS_DESC =
   "One rule per line: a filter, then '->', then a CSS colour. The first matching " +
@@ -177,6 +187,7 @@ export class BoardSettingsModal extends Modal {
       dateColumns: draft.dateColumns.map((c) => ({ ...c })),
       columns: draft.columns.map((c) => ({ ...c, symbols: [...c.symbols] })),
       metaColumns: draft.metaColumns.map((c) => ({ ...c })),
+      actions: draft.actions.map((a) => ({ ...a })),
     };
     this.statuses = statuses;
     this.onSubmit = onSubmit;
@@ -243,6 +254,7 @@ export class BoardSettingsModal extends Modal {
     this.renderQueryField(this.bodyEl);
     this.renderBoardType(this.bodyEl);
     this.renderMetaColumnFields(this.bodyEl);
+    this.renderActionFields(this.bodyEl);
     this.renderCardColorsField(this.bodyEl);
   }
 
@@ -350,6 +362,75 @@ export class BoardSettingsModal extends Modal {
     }
 
     this.validateMetaColumns(errorEl);
+  }
+
+  /**
+   * Card actions: any number of them, each a menu label and the mutation it
+   * runs. Right-clicking a card on this board offers them in this order.
+   */
+  private renderActionFields(containerEl: HTMLElement): void {
+    new Setting(containerEl)
+      .setName("Card actions")
+      .setDesc(ACTIONS_DESC)
+      .addButton((button) => {
+        button.setButtonText("Add action").onClick(() => {
+          this.draft.actions = [
+            ...this.draft.actions,
+            { id: newColumnId(), title: "", mutation: "" },
+          ];
+          this.render();
+        });
+      });
+
+    const errorEl = containerEl.createDiv({
+      cls: "tasks-kanban-settings-errors",
+    });
+
+    for (const action of this.draft.actions) {
+      new Setting(containerEl)
+        .setClass("tasks-kanban-setting-column")
+        .addText((text) => {
+          text
+            .setPlaceholder("Menu label")
+            .setValue(action.title)
+            .onChange((value) => {
+              action.title = value;
+            });
+        })
+        .addExtraButton((button) => {
+          button
+            .setIcon("trash")
+            .setTooltip("Delete action")
+            .onClick(() => {
+              this.draft.actions = this.draft.actions.filter(
+                (a) => a.id !== action.id,
+              );
+              this.render();
+            });
+        });
+
+      new Setting(containerEl)
+        .setClass("tasks-kanban-setting-query")
+        .setName("Mutation")
+        .setDesc("What the task becomes. One instruction per line.")
+        .addTextArea((textArea) => {
+          textArea.inputEl.rows = 3;
+          textArea.inputEl.spellcheck = false;
+          textArea.inputEl.placeholder = ACTION_MUTATION_PLACEHOLDER;
+          textArea.setValue(action.mutation);
+          textArea.onChange((value) => {
+            action.mutation = value;
+            this.validateActions(errorEl);
+          });
+        });
+    }
+
+    this.validateActions(errorEl);
+  }
+
+  /** Reject an action that would do nothing, or a line the parser cannot read. */
+  private validateActions(errorEl: HTMLElement): void {
+    this.validate("actions", boardActionErrors(this.draft.actions), errorEl);
   }
 
   /** Reject a meta column that could not collect, or a line neither parser reads. */

@@ -23,6 +23,48 @@ export class TFolder {}
 export abstract class TextFileView extends ItemView {}
 export function setTooltip() {}
 
+/**
+ * Obsidian's context menu, reduced to what the cards use: items with a title
+ * and a click handler, shown at a mouse event. Tests read `lastMenu` to see
+ * what a card offered and to click one of its items.
+ */
+export class MenuItem {
+  title = "";
+  icon: string | null = null;
+  clickHandler: (() => void) | null = null;
+  setTitle(title: string): this {
+    this.title = title;
+    return this;
+  }
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+  onClick(handler: () => void): this {
+    this.clickHandler = handler;
+    return this;
+  }
+}
+
+export class Menu {
+  static lastMenu: Menu | null = null;
+  items: MenuItem[] = [];
+  shownAt: unknown = null;
+  constructor() {
+    Menu.lastMenu = this;
+  }
+  addItem(build: (item: MenuItem) => unknown): this {
+    const item = new MenuItem();
+    build(item);
+    this.items.push(item);
+    return this;
+  }
+  showAtMouseEvent(event: unknown): this {
+    this.shownAt = event;
+    return this;
+  }
+}
+
 /** Obsidian's normalizePath: forward slashes, no repeats, no leading/trailing. */
 export function normalizePath(path: string): string {
   return path

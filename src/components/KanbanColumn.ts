@@ -3,6 +3,7 @@ import { TasksIntegration } from "../services/TasksIntegration";
 import { KanbanCard } from "./KanbanCard";
 import type { KanbanColumnConfig } from "../utils/statusColumns";
 import { columnCollects } from "../utils/columnMatch";
+import type { BoardAction } from "../utils/boardActions";
 import { colorFor, type ColorRule } from "../utils/cardColors";
 import { taskKey, type SubTask } from "../utils/taskHierarchy";
 
@@ -120,6 +121,7 @@ export class KanbanColumn {
     tasks: Task[],
     colorRules: ColorRule[] = [],
     subTasksOf: Map<string, SubTask[]> = new Map(),
+    actions: BoardAction[] = [],
   ) {
     // Clear existing cards
     for (const card of this.cards) {
@@ -151,6 +153,7 @@ export class KanbanColumn {
         this.tasksIntegration,
         colorFor(task, colorRules),
         subTasksOf.get(taskKey(task)) ?? [],
+        actions,
       );
       this.cards.push(card);
       card.render();

@@ -49,6 +49,7 @@ import {
  *
  *   tag includes #<tag>
  *   tag not includes #<tag>
+ *   tag (regex matches|regex does not match) /<pattern>/
  *   description includes <text>
  *   <path|filename|folder> (includes|does not include) <text>
  *   <path|filename|folder> (regex matches|regex does not match) /<pattern>/
@@ -83,11 +84,30 @@ export interface BoardQuery {
  */
 export type FilterInstruction =
   | { kind: "tag"; value: string; negated?: boolean }
+  | TagRegexFilterInstruction
   | { kind: "description"; value: string }
   | DateFilterInstruction
   | StatusFilterInstruction
   | LocationFilterInstruction
   | BooleanFilterInstruction;
+
+/**
+ * A regex test over a task's tags, as in Tasks: the task matches when **any**
+ * of its tags matches the pattern (and, negated, when none of them does).
+ *
+ * The pattern is tested against the tag as it is written, leading `#` and all,
+ * which is what makes `/^#w\d+_\d{4}$/` mean a whole tag rather than a
+ * fragment of one.
+ */
+export interface TagRegexFilterInstruction {
+  kind: "tag-regex";
+  /** The regex source, without the delimiting slashes. */
+  value: string;
+  /** Regex flags (may be empty). */
+  flags?: string;
+  /** True for the `regex does not match` spelling. */
+  negated?: boolean;
+}
 
 /** An empty query: no filters, no sorting, no grouping. */
 export const EMPTY_QUERY: BoardQuery = {
@@ -144,7 +164,7 @@ const GROUP_FIELD_TO_KEYWORD: Partial<Record<GroupField, string>> = {
 
 /** One-line summary of the supported syntax, used in error messages. */
 const SUPPORTED_SYNTAX =
-  "supported: tag includes #<tag>, tag not includes #<tag>, description includes <text>, <path|filename|folder> (includes|does not include) <text>, done, not done, status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>, status.name (includes|does not include) <text>, status.name (regex matches|regex does not match) /<pattern>/, <date-field> <operator> <value> (e.g., starts before tomorrow), (<filter>) AND|OR|XOR (<filter>), NOT (<filter>), sort by <due|scheduled|start|created|priority|filename> [reverse], group by <status|priority|tags|path|folder|filename> [reverse]";
+  "supported: tag includes #<tag>, tag not includes #<tag>, tag (regex matches|regex does not match) /<pattern>/, description includes <text>, <path|filename|folder> (includes|does not include) <text>, done, not done, status.type (is|is not) <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>, status.name (includes|does not include) <text>, status.name (regex matches|regex does not match) /<pattern>/, <date-field> <operator> <value> (e.g., starts before tomorrow), (<filter>) AND|OR|XOR (<filter>), NOT (<filter>), sort by <due|scheduled|start|created|priority|filename> [reverse], group by <status|priority|tags|path|folder|filename> [reverse]";
 
 /**
  * Parse a multi-line query string into a {@link BoardQuery}. One instruction per
@@ -314,6 +334,29 @@ function parseLine(line: string): {
     return { filter: dateFilter };
   }
 
+  // tag regex matches /<pattern>/[flags]
+  const tagRegexMatch =
+    /^tag\s+regex\s+(matches|does\s+not\s+match)\s+\/(.*)\/([a-z]*)$/i.exec(
+      line,
+    );
+  if (tagRegexMatch) {
+    const pattern = tagRegexMatch[2];
+    const flags = tagRegexMatch[3];
+    try {
+      new RegExp(pattern, flags);
+    } catch {
+      return { error: `invalid regular expression /${pattern}/${flags}` };
+    }
+    return {
+      filter: {
+        kind: "tag-regex",
+        value: pattern,
+        flags,
+        negated: /does/i.test(tagRegexMatch[1]),
+      },
+    };
+  }
+
   // tag not includes <tag> (must be checked before plain "tag includes")
   const tagNotMatch = /^tag\s+not\s+includes\s+(.+)$/i.exec(line);
   if (tagNotMatch) {
@@ -373,6 +416,8 @@ function serializeFilter(filter: FilterInstruction): string {
       return filter.negated
         ? `tag not includes #${filter.value}`
         : `tag includes #${filter.value}`;
+    case "tag-regex":
+      return `tag regex ${filter.negated ? "does not match" : "matches"} /${filter.value}/${filter.flags ?? ""}`;
     case "description":
       return `description includes ${filter.value}`;
     case "date":
@@ -445,6 +490,8 @@ function matchesFilter(
       const has = (task.tags ?? []).map(normalizeTag).includes(filter.value);
       return filter.negated ? !has : has;
     }
+    case "tag-regex":
+      return matchesTagRegex(task, filter);
     case "description":
       return task.description
         .toLowerCase()
@@ -460,6 +507,22 @@ function matchesFilter(
         matchesFilter(task, operand, now),
       );
   }
+}
+
+/**
+ * Whether any of the task's tags matches a {@link TagRegexFilterInstruction}
+ * (or, negated, that none does). Every tag is tested in its written form, with
+ * exactly one leading `#`, however the cache spelled it.
+ */
+function matchesTagRegex(
+  task: Task,
+  filter: TagRegexFilterInstruction,
+): boolean {
+  const pattern = new RegExp(filter.value, filter.flags);
+  const matched = (task.tags ?? []).some((tag) =>
+    pattern.test(`#${normalizeTag(tag)}`),
+  );
+  return filter.negated ? !matched : matched;
 }
 
 /**
@@ -519,6 +582,11 @@ function filterTasks(tasks: Task[], filters: FilterInstruction[]): Task[] {
     (f): f is BooleanFilterInstruction => f.kind === "boolean",
   );
 
+  // AND-ed, like every filter but the OR-ed `tag includes` pool below.
+  const tagRegexFilters = filters.filter(
+    (f): f is TagRegexFilterInstruction => f.kind === "tag-regex",
+  );
+
   return tasks.filter((task) => {
     const taskTags = (task.tags ?? []).map(normalizeTag);
 
@@ -560,6 +628,13 @@ function filterTasks(tasks: Task[], filters: FilterInstruction[]): Task[] {
     const now = new Date();
     for (const dateFilter of dateFilters) {
       if (!matchesDateFilter(task, dateFilter, now)) {
+        return false;
+      }
+    }
+
+    // Tag regex filters: AND'd — all must match, as in Tasks.
+    for (const tagRegexFilter of tagRegexFilters) {
+      if (!matchesTagRegex(task, tagRegexFilter)) {
         return false;
       }
     }

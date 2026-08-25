@@ -75,6 +75,7 @@ obsidian-tasks-kanban/
 │   │   ├── dateColumns.ts           # Day columns for a date board
 │   │   ├── weeklyBoard.ts           # ISO weeks + the weekly planner's board
 │   │   ├── metaColumns.ts           # Meta columns: predicate + mutation columns
+│   │   ├── boardActions.ts          # Card-menu actions: named mutations
 │   │   ├── booleanFilter.ts         # (a) AND/OR/XOR (b), NOT (a) over filters
 │   │   ├── taskMutation.ts          # The mutation language + applying it to a line
 │   │   ├── columnMatch.ts           # columnCollects: the one column↔task matcher
@@ -150,6 +151,8 @@ On top of its type's columns a board may carry any number of **meta columns** (`
 - The predicate can say things a single field cannot, which is why the query language grew boolean combinators (`utils/booleanFilter.ts`): `(no scheduled date) OR (scheduled before today)`. Operators are capitals and every sub-filter is parenthesised, as in the Tasks reference; that is also what keeps a lowercase "or" inside a description filter ordinary text.
 - Meta columns render **before** the type's columns, and a task goes to the **first** column that collects it (`KanbanLane.updateTasks`). Overlap is therefore resolved by position: the planner's "Unplanned" pool overlaps the date board's "No date" catch-all and wins it. Before meta columns existed no two columns could overlap, so first-match changes nothing for the older types.
 
+A board also carries **card actions** (`utils/boardActions.ts`): named mutations, in the same language, offered by `KanbanCard` in an Obsidian `Menu` on right-click and applied through the same `TaskUpdater.applyMutation`. Dropping a card and picking a command are the same act with different triggers, which is why they share a language; what differs is that a column mutates what is dropped into it and an action mutates what is asked. They ride to the cards alongside the colour rules (`KanbanLane.updateTasks` → `KanbanColumn.updateTasks` → `KanbanCard`), so a settings change reaches them on the next render. A board with no actions does not touch the contextmenu event.
+
 `columnCollects` (in `utils/columnMatch.ts`) is the single matcher for all four modes; `KanbanLane` and `KanbanColumn`'s drop handler go through it, so distribution and drops can't disagree.
 
 `resolveBoardType` handles boards written before types were explicit: no `boardType` key means the old implicit rule applies (a `columnTagPrefix` ⇒ tag board, otherwise status).
@@ -158,7 +161,11 @@ On top of its type's columns a board may carry any number of **meta columns** (`
 
 The ribbon's calendar button calls `TasksKanbanPlugin.openWeeklyPlanner`. `utils/weeklyBoard.ts` is pure: `startOfWeek` (Monday-based, unlike the Sunday-based `in this week` query filter, which follows Tasks), `isoWeekName` (`2026-W35`, decided by the week's Thursday) and `buildWeeklyBoard`, whose column ids are derived from the day so the document is a pure function of the week.
 
-The planner is a date board with no "No date" catch-all — its columns are the seven weekdays, led by the `Unplanned` meta column, which already holds the undated work worth seeing: unfinished tasks with no day, or with a day **older than this week's Monday**. The threshold is the week's start, not today — a planner filtered on `before today` would empty its own earlier days as the week ran on: unfinished work with no day, or a day already past. Its mutation (`set not done`, `clear <field> date`) is the exact undoing of a drop into a weekday, so dragging a card out of the week returns it to the pool rather than leaving it dated in the past. Both are written against the planner's own date field.
+The planner is a date board with no "No date" catch-all — its columns are the seven weekdays, led by the `Unplanned` meta column, which already holds the undated work worth seeing: unfinished tasks with no day, or with a day **older than this week's Monday**, minus anything carrying another week's preplanning tag. The threshold is the week's start, not today — a planner filtered on `before today` would empty its own earlier days as the week ran on: unfinished work with no day, or a day already past. Its mutation (`set not done`, `clear <field> date`) is the exact undoing of a drop into a weekday, so dragging a card out of the week returns it to the pool rather than leaving it dated in the past. Both are written against the planner's own date field.
+
+`weekTag` builds a week's **preplanning tag** (`#w35_2026`, ISO week and week-year, unpadded). A task carrying one is assigned to that week without a day; the pool's third filter line — `(tag regex matches /^#w0*35_2026$/) OR NOT (tag regex matches /^#w\d+_\d{4}$/)` — keeps other weeks' work out. It is written in the query language rather than in matching code, so it is visible in the board file and editable there; `tag regex matches` was added to the language for it.
+
+`weeklyActions` puts three commands on every card's menu: **Next week** (clear the day, drop this week's tag, add next week's — so the card leaves this board for the next week's planner), **Cancel** (`set status.type CANCELLED`) and **Done** (`set done`).
 
 The week name is the file name, so identity is positional, not stored: `BoardRepository.ensure` writes the file only when it is absent, which is what makes reopening mid-week return the board with its edits rather than a regenerated one. The folder comes from `weeklyPlannerFolder`, nested under `boardsFolder` by default so weekly boards still appear in the picker.
 

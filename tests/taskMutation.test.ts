@@ -76,6 +76,17 @@ describe("parseMutationLine", () => {
     expect(parseMutationLine("set status [ ]")).toEqual({
       mutation: { kind: "status", symbol: " " },
     });
+    expect(parseMutationLine("set status.type CANCELLED")).toEqual({
+      mutation: { kind: "status-type", type: "CANCELLED" },
+    });
+    expect(parseMutationLine("set status.type in_progress")).toEqual({
+      mutation: { kind: "status-type", type: "IN_PROGRESS" },
+    });
+  });
+
+  it("rejects a status type the vault could not have", () => {
+    const result = parseMutationLine("set status.type LATER");
+    expect("error" in result && result.error).toContain("unknown status type");
   });
 
   it("parses date instructions", () => {
@@ -125,6 +136,7 @@ describe("parseMutationLine", () => {
       "set done",
       "set not done",
       "set status /",
+      "set status.type CANCELLED",
       "set scheduled today",
       "clear due date",
       "add tag #work",
@@ -161,6 +173,19 @@ describe("applyMutations", () => {
 
   it("stamps the done date when it sets done", () => {
     expect(apply("- [ ] Task", "set done")).toBe("- [x] Task ✅ 2026-08-25");
+  });
+
+  it("cancels through the vault's cancelled status, stamping its date", () => {
+    expect(apply("- [ ] Task", "set status.type CANCELLED")).toBe(
+      "- [-] Task ❌ 2026-08-25",
+    );
+  });
+
+  it("leaves the status alone when the vault has no such type", () => {
+    const ctx = context({ symbolForType: () => null });
+    expect(apply("- [ ] Task", "set status.type CANCELLED", " ", ctx)).toBe(
+      "- [ ] Task",
+    );
   });
 
   it("honours the vault's own done symbol", () => {

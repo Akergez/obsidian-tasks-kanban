@@ -928,3 +928,66 @@ function toLocalISODate(d: Date): string {
   const day = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+describe("tag regex filters", () => {
+  const apply = (line: string, task: Task) => {
+    const { query, errors } = parseQuery(line);
+    expect(errors).toEqual([]);
+    return applyBoardQuery([task], query).length === 1;
+  };
+
+  it("matches when any tag matches the pattern", () => {
+    const line = String.raw`tag regex matches /^#w\d+_\d{4}$/`;
+    expect(apply(line, createTask({ tags: ["#work", "#w35_2026"] }))).toBe(
+      true,
+    );
+    expect(apply(line, createTask({ tags: ["#work"] }))).toBe(false);
+    expect(apply(line, createTask())).toBe(false);
+  });
+
+  it("tests the tag with its leading hash, however the cache spelled it", () => {
+    const line = String.raw`tag regex matches /^#w35_2026$/`;
+    expect(apply(line, createTask({ tags: ["w35_2026"] }))).toBe(true);
+    expect(apply(line, createTask({ tags: ["#w35_2026"] }))).toBe(true);
+    // Anchored, so it is a whole tag rather than a fragment of a longer one.
+    expect(apply(line, createTask({ tags: ["#w35_2026x"] }))).toBe(false);
+  });
+
+  it("negates with 'does not match'", () => {
+    const line = String.raw`tag regex does not match /^#w\d+_\d{4}$/`;
+    expect(apply(line, createTask({ tags: ["#w35_2026"] }))).toBe(false);
+    expect(apply(line, createTask({ tags: ["#work"] }))).toBe(true);
+  });
+
+  it("honours regex flags", () => {
+    expect(
+      apply("tag regex matches /^#WORK$/i", createTask({ tags: ["#work"] })),
+    ).toBe(true);
+    expect(
+      apply("tag regex matches /^#WORK$/", createTask({ tags: ["#work"] })),
+    ).toBe(false);
+  });
+
+  it("is AND-ed with the other filters, unlike the OR-ed tag pool", () => {
+    const line = [
+      String.raw`tag regex matches /^#w\d+_\d{4}$/`,
+      "tag includes #work",
+    ].join("\n");
+    expect(apply(line, createTask({ tags: ["#work"] }))).toBe(false);
+    expect(apply(line, createTask({ tags: ["#work", "#w35_2026"] }))).toBe(
+      true,
+    );
+  });
+
+  it("reports an invalid pattern rather than throwing", () => {
+    const { errors } = parseQuery("tag regex matches /(/");
+    expect(errors).toEqual([
+      expect.stringContaining("invalid regular expression"),
+    ]);
+  });
+
+  it("round-trips through serialization", () => {
+    const line = String.raw`tag regex does not match /^#w\d+_\d{4}$/i`;
+    expect(serializeQuery(parseQuery(line).query)).toBe(line);
+  });
+});

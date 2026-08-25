@@ -10,8 +10,9 @@ import {
 } from "../utils/taskChips";
 import { taskFileName } from "../utils/taskFile";
 import type { SubTask } from "../utils/taskHierarchy";
-import { setTooltip } from "obsidian";
+import { Menu, setTooltip } from "obsidian";
 import type { App } from "obsidian";
+import type { BoardAction } from "../utils/boardActions";
 
 /**
  * Status types that count as finished for the sub-task counter, matching the
@@ -29,10 +30,13 @@ export class KanbanCard {
   private app: App;
   private dragStartHandler: ((e: DragEvent) => void) | null = null;
   private clickHandler: ((e: MouseEvent) => void) | null = null;
+  private contextMenuHandler: ((e: MouseEvent) => void) | null = null;
   /** Spine colour from the board's colour rules, or undefined for the default. */
   private readonly spineColor?: string;
   /** Tasks nested under this one in the source file, in document order. */
   private readonly subTasks: SubTask[];
+  /** The board's card-menu actions, offered on right-click. */
+  private readonly actions: BoardAction[];
 
   constructor(
     container: HTMLElement,
@@ -40,6 +44,7 @@ export class KanbanCard {
     tasksIntegration: TasksIntegration,
     spineColor?: string,
     subTasks: SubTask[] = [],
+    actions: BoardAction[] = [],
   ) {
     this.container = container;
     this.task = task;
@@ -47,6 +52,7 @@ export class KanbanCard {
     this.app = tasksIntegration.app;
     this.spineColor = spineColor;
     this.subTasks = subTasks;
+    this.actions = actions;
   }
 
   /**
@@ -101,6 +107,38 @@ export class KanbanCard {
       this.openSourceFile();
     };
     this.container.addEventListener("click", this.clickHandler);
+
+    this.contextMenuHandler = (event: MouseEvent) => {
+      if (this.actions.length === 0) {
+        // Nothing configured: leave the event alone so Obsidian's own menu,
+        // and the platform's, still behave as they would on any other card.
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      this.showActionMenu(event);
+    };
+    this.container.addEventListener("contextmenu", this.contextMenuHandler);
+  }
+
+  /**
+   * The card's right-click menu: one item per board action, each running that
+   * action's mutation against this task. The board owns which actions exist —
+   * the card only knows how to offer them.
+   */
+  private showActionMenu(event: MouseEvent): void {
+    const menu = new Menu();
+    for (const action of this.actions) {
+      menu.addItem((item) =>
+        item.setTitle(action.title).onClick(() => {
+          void this.tasksIntegration.taskUpdater.applyMutation(
+            this.task,
+            action.mutation,
+          );
+        }),
+      );
+    }
+    menu.showAtMouseEvent(event);
   }
 
   /**
@@ -285,6 +323,14 @@ export class KanbanCard {
     }
 
     this.container.removeEventListener("dragend", () => {});
+
+    if (this.contextMenuHandler) {
+      this.container.removeEventListener(
+        "contextmenu",
+        this.contextMenuHandler,
+      );
+      this.contextMenuHandler = null;
+    }
 
     if (this.clickHandler) {
       this.container.removeEventListener("click", this.clickHandler);

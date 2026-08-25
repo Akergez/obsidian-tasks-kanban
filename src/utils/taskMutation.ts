@@ -1,5 +1,6 @@
 import type { StatusInfo, Task } from "../services/TasksIntegration";
 import { normalizeTag } from "./searchFilter";
+import { STATUS_TYPES } from "./statusFilter";
 import {
   DATE_FIELD_TO_KEYWORD,
   DATE_KEYWORD_TO_FIELD,
@@ -18,6 +19,7 @@ import {
  *
  *   set done                     ↔ done
  *   set not done                 ↔ not done
+ *   set status.type <TYPE>       ↔ status.type is <TYPE>
  *   set status <symbol>          ↔ (a specific status symbol)
  *   set <date-field> <value>     ↔ <date-field> on <value>   (today|tomorrow|
  *                                  yesterday|YYYY-MM-DD)
@@ -30,13 +32,14 @@ import {
 export type MutationInstruction =
   | { kind: "status"; symbol: string }
   | { kind: "status-done"; done: boolean }
+  | { kind: "status-type"; type: string }
   | { kind: "date"; field: DateField; value: string }
   | { kind: "clear-date"; field: DateField }
   | { kind: "tag"; value: string; remove?: boolean };
 
 /** One-line summary of the supported syntax, used in error messages. */
 const SUPPORTED_SYNTAX =
-  "supported: set done, set not done, set status <symbol>, " +
+  "supported: set done, set not done, set status.type <TODO|DONE|IN_PROGRESS|ON_HOLD|CANCELLED|NON_TASK>, set status <symbol>, " +
   "set <due|scheduled|start|created|done|cancelled> <today|tomorrow|yesterday|YYYY-MM-DD>, " +
   "clear <due|scheduled|start|created|done|cancelled> date, add tag #<tag>, remove tag #<tag>";
 
@@ -62,6 +65,17 @@ export function parseMutationLine(
   }
   if (/^set\s+not\s+done$/i.test(line)) {
     return { mutation: { kind: "status-done", done: false } };
+  }
+
+  const typeMatch = /^set\s+status\.type\s+(.+)$/i.exec(line);
+  if (typeMatch) {
+    const type = typeMatch[1].trim().toUpperCase();
+    if (!(STATUS_TYPES as readonly string[]).includes(type)) {
+      return {
+        error: `unknown status type "${typeMatch[1].trim()}" (expected one of ${STATUS_TYPES.join("|")})`,
+      };
+    }
+    return { mutation: { kind: "status-type", type } };
   }
 
   const statusMatch = /^set\s+status\s+(.+)$/i.exec(line);
@@ -157,6 +171,8 @@ export function serializeMutation(mutation: MutationInstruction): string {
       return `set status ${mutation.symbol}`;
     case "status-done":
       return mutation.done ? "set done" : "set not done";
+    case "status-type":
+      return `set status.type ${mutation.type}`;
     case "date":
       return `set ${DATE_FIELD_TO_KEYWORD[mutation.field]} ${mutation.value}`;
     case "clear-date":
@@ -216,11 +232,18 @@ export function applyMutations(
   for (const mutation of mutations) {
     switch (mutation.kind) {
       case "status":
-      case "status-done": {
+      case "status-done":
+      case "status-type": {
         const symbol =
           mutation.kind === "status"
             ? mutation.symbol
-            : context.symbolForType(mutation.done ? "DONE" : "TODO");
+            : context.symbolForType(
+                mutation.kind === "status-type"
+                  ? mutation.type
+                  : mutation.done
+                    ? "DONE"
+                    : "TODO",
+              );
         if (symbol === null) {
           // No configured status of that type: leave the status alone rather
           // than writing a symbol the vault does not know.

@@ -115,6 +115,7 @@ export default class TasksKanbanPlugin extends Plugin {
         collapsedGroups: this.data.baseCollapsedGroups,
         columns: this.data.baseColumns,
         metaColumns: this.data.baseMetaColumns,
+        actions: this.data.baseActions,
         columnTagPrefix: this.data.baseColumnTagPrefix,
         columnOrder: this.data.baseColumnOrder,
         dateField: this.data.baseDateField,
@@ -134,6 +135,7 @@ export default class TasksKanbanPlugin extends Plugin {
           baseCollapsedGroups: state.collapsedGroups,
           baseColumns: state.columns,
           baseMetaColumns: state.metaColumns,
+          baseActions: state.actions,
           baseColumnTagPrefix: state.columnTagPrefix,
           baseColumnOrder: state.columnOrder,
           baseDateField: state.dateField,
@@ -307,6 +309,7 @@ export default class TasksKanbanPlugin extends Plugin {
       baseColumns: data?.baseColumns ?? DEFAULT_PLUGIN_DATA.baseColumns,
       baseMetaColumns:
         data?.baseMetaColumns ?? DEFAULT_PLUGIN_DATA.baseMetaColumns,
+      baseActions: data?.baseActions ?? DEFAULT_PLUGIN_DATA.baseActions,
       baseColumnTagPrefix,
       baseColumnOrder:
         data?.baseColumnOrder ?? DEFAULT_PLUGIN_DATA.baseColumnOrder,

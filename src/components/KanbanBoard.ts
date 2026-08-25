@@ -16,6 +16,7 @@ import type { KanbanColumnConfig } from "../utils/statusColumns";
 import { buildTagColumns, parseColumnOrder } from "../utils/tagColumns";
 import { buildDateColumns } from "../utils/dateColumns";
 import { buildMetaColumns } from "../utils/metaColumns";
+import { buildBoardActions, type BoardAction } from "../utils/boardActions";
 import type { DateField } from "../utils/dateFilter";
 import { parseColorRules, type ColorRule } from "../utils/cardColors";
 import { nestTasks, type SubTask } from "../utils/taskHierarchy";
@@ -39,6 +40,7 @@ import {
   type BoardQuery,
 } from "../query/boardQuery";
 import type {
+  BoardActionConfig,
   BoardStatePersistence,
   BoardType,
   ColumnConfig,
@@ -83,6 +85,10 @@ export class KanbanBoard {
   private columnConfigs: ColumnConfig[];
   /** Meta columns for this board, rendered before the type's columns. */
   private metaColumns: MetaColumnConfig[];
+  /** Card-menu actions for this board, as configured. */
+  private actionConfigs: BoardActionConfig[];
+  /** {@link actionConfigs} parsed; rebuilt whenever the raw setting changes. */
+  private actions: BoardAction[] = [];
   /** Tag-column prefix for this board. Set in settings. */
   private columnTagPrefix: string;
   /** Tag-column order for this board; "" ⇒ alphabetical. Set in settings. */
@@ -118,6 +124,8 @@ export class KanbanBoard {
     this.boardType = initial.boardType;
     this.columnConfigs = initial.columns;
     this.metaColumns = initial.metaColumns;
+    this.actionConfigs = initial.actions;
+    this.actions = buildBoardActions(this.actionConfigs);
     this.columnTagPrefix = initial.columnTagPrefix;
     this.columnOrder = initial.columnOrder;
     this.dateField = initial.dateField;
@@ -235,6 +243,7 @@ export class KanbanBoard {
       noDateColumn: this.noDateColumn,
       columns: this.columnConfigs,
       metaColumns: this.metaColumns,
+      actions: this.actionConfigs,
       cardColors: this.cardColors,
     };
 
@@ -253,6 +262,8 @@ export class KanbanBoard {
         this.noDateColumn = next.noDateColumn;
         this.columnConfigs = next.columns;
         this.metaColumns = next.metaColumns;
+        this.actionConfigs = next.actions;
+        this.actions = buildBoardActions(this.actionConfigs);
         this.cardColors = next.cardColors;
         this.colorRules = this.buildColorRules();
         this.searchBar.setState({
@@ -298,6 +309,7 @@ export class KanbanBoard {
       collapsedGroups: [...this.collapsedGroups],
       columns: this.columnConfigs,
       metaColumns: this.metaColumns,
+      actions: this.actionConfigs,
       columnTagPrefix: this.columnTagPrefix,
       columnOrder: this.columnOrder,
       dateField: this.dateField,
@@ -387,6 +399,8 @@ export class KanbanBoard {
     this.boardType = state.boardType;
     this.columnConfigs = state.columns;
     this.metaColumns = state.metaColumns;
+    this.actionConfigs = state.actions;
+    this.actions = buildBoardActions(this.actionConfigs);
     this.columnTagPrefix = state.columnTagPrefix;
     this.columnOrder = state.columnOrder;
     this.dateField = state.dateField;
@@ -509,7 +523,12 @@ export class KanbanBoard {
     }
 
     groups.forEach((group, i) =>
-      this.lanes[i].updateTasks(group.tasks, this.colorRules, this.subTasksOf),
+      this.lanes[i].updateTasks(
+        group.tasks,
+        this.colorRules,
+        this.subTasksOf,
+        this.actions,
+      ),
     );
   }
 

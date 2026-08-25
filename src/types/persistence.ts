@@ -103,6 +103,25 @@ export function resolveNoDateColumn(raw: unknown): boolean {
 }
 
 /**
+ * A **card action**: a named mutation a user runs on one task from the card's
+ * right-click menu (see components/KanbanCard).
+ *
+ * Same language as a meta column's mutation, and for the same reason — moving a
+ * card and picking a command off a menu are the same act, said two ways. What
+ * differs is the trigger: a column mutates what is dropped into it, an action
+ * mutates what is asked. Each board carries its own set, so a planner's menu
+ * ("Next week") and a sprint board's need not agree.
+ */
+export interface BoardActionConfig {
+  /** Stable identifier (crypto.randomUUID()); also the menu item's key. */
+  id: string;
+  /** Menu label. */
+  title: string;
+  /** Mutation lines applied to the task; empty ⇒ the action is dropped. */
+  mutation: string;
+}
+
+/**
  * A single saved board: a named view. Its `query` holds only the view's own
  * lines (its slice; filters + sort + group); at render time that is merged on
  * top of the shared base query (see {@link PluginData.baseQuery}).
@@ -164,6 +183,8 @@ export interface PluginData {
   baseColumns: ColumnConfig[];
   /** Meta columns for the base-only board, shown before its type's columns. */
   baseMetaColumns: MetaColumnConfig[];
+  /** Card-menu actions for the base-only board. */
+  baseActions: BoardActionConfig[];
   /** Tag-column prefix for the base-only board; "" ⇒ status columns. */
   baseColumnTagPrefix: string;
   /** Tag-column order for the base-only board; "" ⇒ alphabetical. */
@@ -192,6 +213,7 @@ export const DEFAULT_PLUGIN_DATA: PluginData = {
   baseCollapsedGroups: [],
   baseColumns: [],
   baseMetaColumns: [],
+  baseActions: [],
   baseColumnTagPrefix: "",
   baseColumnOrder: "",
   baseCardColors: "",
@@ -236,6 +258,8 @@ export interface BoardOwnState {
   columns: ColumnConfig[];
   /** Meta columns, shown before the type's columns. Owned by settings. */
   metaColumns: MetaColumnConfig[];
+  /** Card-menu actions. Owned by settings. */
+  actions: BoardActionConfig[];
   /** Date columns: the field their days apply to. Owned by settings. */
   dateField: DateField;
   /** Date columns: the days shown, in order. Owned by settings. */

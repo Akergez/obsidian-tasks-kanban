@@ -1,7 +1,7 @@
 import { emptyBoardFile, type BoardFile } from "../query/boardFile";
 import { DATE_FIELD_TO_KEYWORD, type DateField } from "./dateFilter";
 import { todayISO } from "./dateColumns";
-import type { MetaColumnConfig } from "../types/persistence";
+import type { BoardActionConfig, MetaColumnConfig } from "../types/persistence";
 
 /** Column titles for the seven days, Monday first. */
 export const WEEKDAY_TITLES = [
@@ -68,6 +68,82 @@ export function weekDays(monday: Date): string[] {
   );
 }
 
+/**
+ * A task's **preplanning tag**: `#w35_2026` says "this belongs to week 35 of
+ * 2026" without committing it to a day. Written by hand in the note (or by a
+ * meta column's `add tag` mutation), and read by the planner to keep other
+ * weeks' work out of this week's pool.
+ *
+ * The week number is the ISO one — the same the planner names its file after —
+ * and the year is the ISO week-year, so the tag for the week of 2027-01-01 is
+ * `#w53_2026`, matching the board named `2026-W53`.
+ */
+export function weekTag(monday: Date): string {
+  const [year, week] = isoWeekName(monday).split("-W");
+  // Unpadded, as the tag is written by hand: `#w5_2026`, not `#w05_2026`.
+  return `#w${Number(week)}_${year}`;
+}
+
+/**
+ * Matches any preplanning tag, whatever week it names. A leading zero is
+ * allowed so a hand-written `#w05_2026` counts as planned too.
+ */
+export const WEEK_TAG_PATTERN = String.raw`^#w\d+_\d{4}$`;
+
+/** Matches this week's preplanning tag, padded or not. */
+function weekTagPattern(monday: Date): string {
+  const [year, week] = isoWeekName(monday).split("-W");
+  return String.raw`^#w0*${Number(week)}_${year}$`;
+}
+
+/** The Monday after `monday` — the week this one hands work on to. */
+function nextMonday(monday: Date): Date {
+  return new Date(
+    monday.getFullYear(),
+    monday.getMonth(),
+    monday.getDate() + 7,
+  );
+}
+
+/**
+ * The planner's card actions: the three things one does to a task while
+ * planning a week, offered on right-click.
+ *
+ * "Next week" is the one that needs saying carefully. Handing a task on means
+ * taking it out of this week — clearing its day and dropping this week's
+ * preplanning tag — before tagging it for the next, or the task would still be
+ * claimed by this board (a day column keeps a dated card, and the pool keeps
+ * one tagged for this week). The card therefore leaves the board, and turns up
+ * in next week's planner, which is what "next week" should look like.
+ */
+export function weeklyActions(
+  monday: Date,
+  dateField: DateField,
+): BoardActionConfig[] {
+  const keyword = DATE_FIELD_TO_KEYWORD[dateField];
+  return [
+    {
+      id: "action:next-week",
+      title: "Next week",
+      mutation: [
+        `clear ${keyword} date`,
+        `remove tag ${weekTag(monday)}`,
+        `add tag ${weekTag(nextMonday(monday))}`,
+      ].join("\n"),
+    },
+    {
+      id: "action:cancel",
+      title: "Cancel",
+      mutation: "set status.type CANCELLED",
+    },
+    {
+      id: "action:done",
+      title: "Done",
+      mutation: "set done",
+    },
+  ];
+}
+
 /** Title of the planner's meta column, the pool the week is planned out of. */
 export const UNPLANNED_COLUMN_TITLE = "Unplanned";
 
@@ -82,6 +158,12 @@ export const UNPLANNED_COLUMN_ID = "meta:unplanned";
  * whole week would otherwise empty its earlier days as the week went on,
  * pulling Monday's unfinished card out of Monday on Tuesday. The week is the
  * unit being planned, so the week is what the pool is outside of.
+ *
+ * Preplanning tags ({@link weekTag}) narrow it further: a task carrying some
+ * other week's tag is already spoken for and stays out, while one tagged for
+ * this week — or for no week at all — belongs in the pool. Said in the query
+ * language rather than in code, so the rule is visible in the board file and
+ * editable there.
  *
  * Its mutation is the exact undoing of a drop into a weekday: the task stops
  * being done and loses its day, so dragging a card back out of the week returns
@@ -102,6 +184,8 @@ export function unplannedColumn(
     filter: [
       "not done",
       `(no ${keyword} date) OR (${keyword} before ${weekStart})`,
+      // Preplanning: a task tagged for some other week is that week's problem.
+      `(tag regex matches /${weekTagPattern(monday)}/) OR NOT (tag regex matches /${WEEK_TAG_PATTERN}/)`,
     ].join("\n"),
     mutation: ["set not done", `clear ${keyword} date`].join("\n"),
   };
@@ -111,7 +195,7 @@ export function unplannedColumn(
  * Build the weekly planner for the week starting at `monday`: a date board with
  * one column per weekday, led by the {@link unplannedColumn} pool (and with no
  * "No date" catch-all, which that pool makes redundant), named after the ISO
- * week.
+ * week, with the {@link weeklyActions} on every card's right-click menu.
  *
  * Column ids are derived from the day rather than random, so the file is a pure
  * function of the week — regenerating it would produce the same document, and a
@@ -127,6 +211,7 @@ export function buildWeeklyBoard(
     boardType: "date",
     dateField,
     metaColumns: [unplannedColumn(monday, dateField)],
+    actions: weeklyActions(monday, dateField),
     // The pool already holds the undated work worth seeing, so a "No date"
     // column would add nothing but finished leftovers.
     noDateColumn: false,

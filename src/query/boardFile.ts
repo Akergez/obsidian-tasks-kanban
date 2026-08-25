@@ -5,6 +5,7 @@ import {
   resolveBoardType,
   resolveNoDateColumn,
   type BoardType,
+  type BoardActionConfig,
   type ColumnConfig,
   type DateColumnConfig,
   type MetaColumnConfig,
@@ -47,6 +48,8 @@ export interface BoardFile {
   columns: ColumnConfig[];
   /** Meta columns (predicate + mutation), shown before the type's columns. */
   metaColumns: MetaColumnConfig[];
+  /** Named mutations offered in a card's right-click menu. */
+  actions: BoardActionConfig[];
   /** Column ids currently folded. */
   collapsedColumns: string[];
   /** Group keys (swimlane keys) currently folded. */
@@ -67,6 +70,7 @@ export function emptyBoardFile(name: string): BoardFile {
     cardColors: "",
     columns: [],
     metaColumns: [],
+    actions: [],
     collapsedColumns: [],
     collapsedGroups: [],
   };
@@ -157,6 +161,15 @@ export function serializeBoardFile(board: BoardFile): string {
       if (column.mutation !== "") {
         lines.push(blockScalar("mutation", column.mutation, "    "));
       }
+    }
+  }
+
+  if (board.actions.length > 0) {
+    lines.push("", "actions:");
+    for (const action of board.actions) {
+      lines.push(`  - id: ${scalar(action.id)}`);
+      lines.push(`    title: ${scalar(action.title)}`);
+      lines.push(blockScalar("mutation", action.mutation, "    "));
     }
   }
 
@@ -267,6 +280,33 @@ function asMetaColumns(value: unknown): MetaColumnConfig[] {
   return columns;
 }
 
+/**
+ * Coerce the `actions:` block. An entry with no mutation is dropped: a menu
+ * item that changes nothing is only a way to mislead.
+ */
+function asActions(value: unknown): BoardActionConfig[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const actions: BoardActionConfig[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "object" || raw === null) {
+      continue;
+    }
+    const entry = raw as Record<string, unknown>;
+    const mutation = asString(entry.mutation).trim();
+    if (mutation === "") {
+      continue;
+    }
+    actions.push({
+      id: asString(entry.id) || crypto.randomUUID(),
+      title: asString(entry.title),
+      mutation,
+    });
+  }
+  return actions;
+}
+
 /** Coerce the `columns:` block, dropping entries that could not render. */
 function asColumns(value: unknown): ColumnConfig[] {
   if (!Array.isArray(value)) {
@@ -341,6 +381,7 @@ export function parseBoardFile(
   board.cardColors = asString(doc.cardColors);
   board.columns = asColumns(doc.columns);
   board.metaColumns = asMetaColumns(doc.metaColumns);
+  board.actions = asActions(doc.actions);
   board.collapsedColumns = asStringList(doc.collapsedColumns);
   board.collapsedGroups = asStringList(doc.collapsedGroups);
 
@@ -354,6 +395,10 @@ export function parseBoardFile(
 
   if (doc.metaColumns !== undefined && !Array.isArray(doc.metaColumns)) {
     errors.push("`metaColumns` must be a list; ignoring it.");
+  }
+
+  if (doc.actions !== undefined && !Array.isArray(doc.actions)) {
+    errors.push("`actions` must be a list; ignoring it.");
   }
 
   return { board, errors };
