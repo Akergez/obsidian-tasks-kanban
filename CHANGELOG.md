@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.16.0...0.16.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* weekly duplicate ([cfa6437](https://github.com/Akergez/obsidian-tasks-kanban/commit/cfa6437ccb8a80b55828fa1c2a269983c63c8293))
+
 ## [0.16.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.15.2...0.16.0) (2026-08-25)
 
 
