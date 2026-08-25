@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.18.4...0.19.0) (2026-08-25)
+
+
+### Features
+
+* no file dup ([411cffd](https://github.com/Akergez/obsidian-tasks-kanban/commit/411cffd75c7c37e055f7d59fb3342ab0dfe02817))
+
 ## [0.18.4](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.18.3...0.18.4) (2026-08-25)
 
 
