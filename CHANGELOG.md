@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.4](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.18.3...0.18.4) (2026-08-25)
+
+
+### Bug Fixes
+
+* render ([f3821f2](https://github.com/Akergez/obsidian-tasks-kanban/commit/f3821f2c3986bf514ed2d8c66f70678b2c24919c))
+
 ## [0.18.3](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.18.2...0.18.3) (2026-08-25)
 
 
