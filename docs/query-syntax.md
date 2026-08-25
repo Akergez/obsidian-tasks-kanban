@@ -168,6 +168,20 @@ set not done
 clear scheduled date
 ```
 
+### The Template
+
+The weekly planner is rendered from a template note (its path is a setting; the plugin writes a default copy into the vault root on first use). Editing it changes every week made from then on. The week's own values are substituted:
+
+| Placeholder | Example | |
+|---|---|---|
+| `{{week}}` / `{{ww}}` / `{{year}}` | `35` / `35` / `2026` | this week; `ww` is zero-padded (`05`), `week` is not (`5`) |
+| `{{nextWeek}}` / `{{nextWw}}` / `{{nextYear}}` | `36` / `36` / `2026` | the following week — its own year, because week 53 of 2026 is followed by week 1 of 2027 |
+| `{{prevWeek}}` / `{{prevWw}}` / `{{prevYear}}` | `34` / `34` / `2026` | the preceding week |
+| `{{monday}}` … `{{sunday}}` | `2026-08-24` … `2026-08-30` | the week's days |
+| `{{nextMonday}}` | `2026-08-31` | the day after the week ends |
+
+An unknown placeholder is reported and left standing in the note, so a typo shows up rather than quietly becoming an empty value. A regex quantifier like `\d{4}` is not a placeholder and passes through untouched.
+
 ### Preplanning Tags
 
 A task can be assigned to a whole week, without picking a day, by tagging it `#w<week>_<year>` — `#w35_2026` for week 35 of 2026, the ISO week the planner names its file after. Write it in the note by hand, or have a meta column do it (`add tag #w36_2026`).
@@ -192,6 +206,22 @@ Each instruction is the imperative form of the filter it makes true. One per lin
 | `remove tag #<tag>` | Remove the tag | `remove tag #waiting` |
 
 Status types are the same six the filter language uses. Date fields and days are spelled as in the filter language. A meta column with no mutation still collects — it is then a read-only pool, and dropping into it does nothing.
+
+## Where a Board Lives
+
+A board is a fenced code block in an ordinary note:
+
+````markdown
+# My board
+
+```tasks-kanban
+boardType: date
+dateField: scheduled
+…
+```
+````
+
+Obsidian renders it wherever the block is written, so a board can be a note of its own or sit halfway down a daily note. Everything the board saves — folded columns, settings, the query — goes back into that block and nothing else in the note is touched. The **Edit text** button in the board header switches the note to source mode with the cursor on the block, for anything the settings modal does not cover.
 
 ## Card Actions
 

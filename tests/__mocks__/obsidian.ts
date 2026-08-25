@@ -19,6 +19,26 @@ export class Vault {}
 export class Workspace {}
 export class MetadataCache {}
 export class TFile {}
+export class MarkdownView {}
+export class Modal {}
+export class FuzzySuggestModal {}
+export class Setting {}
+export function setIcon() {}
+export class MarkdownRenderChild {
+  containerEl: HTMLElement;
+  constructor(containerEl: HTMLElement) {
+    this.containerEl = containerEl;
+  }
+  onload() {}
+  onunload() {}
+  load() {
+    this.onload();
+  }
+  unload() {
+    this.onunload();
+  }
+  registerEvent() {}
+}
 export class TFolder {}
 export abstract class TextFileView extends ItemView {}
 export function setTooltip() {}

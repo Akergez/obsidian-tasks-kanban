@@ -1,11 +1,14 @@
 import { TFile, TFolder, normalizePath, type App } from "obsidian";
 import {
-  BOARD_EXTENSION,
   emptyBoardFile,
   parseBoardFile,
   serializeBoardFile,
   type BoardFile,
 } from "../query/boardFile";
+import { boardNote, findBoardBlock } from "../query/markdownBoard";
+
+/** Boards are ordinary notes, so this is the extension they carry. */
+export const BOARD_EXTENSION = "md";
 
 /** A board file discovered in the vault. */
 export interface BoardEntry {
@@ -15,7 +18,7 @@ export interface BoardEntry {
   name: string;
 }
 
-/** The file's base name without the `.kanban` extension. */
+/** The file's base name without the `.md` extension. */
 export function boardNameFromPath(path: string): string {
   const base = path.slice(path.lastIndexOf("/") + 1);
   return base.replace(new RegExp(`\\.${BOARD_EXTENSION}$`, "i"), "");
@@ -35,13 +38,14 @@ export function boardPath(folder: string, name: string): string {
 }
 
 /**
- * Reads and writes the `.kanban` board documents in the vault.
+ * Reads and writes the board notes in the vault.
  *
- * Boards live as files the user can move, rename, sync and version like any
- * other note; this is the only place that knows how they map onto the vault.
- * The open board itself is written by its view (see {@link TasksBoardView},
- * which is a TextFileView and owns its file) — this repository serves the
- * settings pane and the board picker, which touch boards that aren't open.
+ * A board is a ```tasks-kanban block inside an ordinary note, so the vault, not
+ * this plugin, owns the file: it can be moved, renamed, synced and versioned
+ * like anything else, and edited in Obsidian's own editor. This is the only
+ * place that knows how boards map onto the vault. An open board writes itself
+ * (see components/BoardBlock, which owns its own block) — this repository
+ * serves the picker and the commands, which touch boards that aren't open.
  */
 export class BoardRepository {
   private readonly app: App;
@@ -59,7 +63,14 @@ export class BoardRepository {
     return folder === "" ? "" : normalizePath(folder);
   }
 
-  /** Every board file under the configured folder, sorted by name. */
+  /**
+   * Every note under the configured folder, sorted by name.
+   *
+   * The folder is the convention: what the plugin writes there is a board, and
+   * a note put there is offered as one. Proving it — reading each file to look
+   * for the block — would make listing async and the picker slow, for a
+   * distinction the folder already draws.
+   */
   list(): BoardEntry[] {
     const folder = this.folderPath();
     const prefix = folder === "" ? "" : `${folder}/`;
@@ -89,12 +100,15 @@ export class BoardRepository {
       return undefined;
     }
     const content = await this.app.vault.read(file);
-    return parseBoardFile(content, boardNameFromPath(path));
+    const block = findBoardBlock(content);
+    if (!block) {
+      return undefined;
+    }
+    return parseBoardFile(block.body, boardNameFromPath(path));
   }
 
-  /** Write a board back to its file, creating it if it does not exist yet. */
-  async write(path: string, board: BoardFile): Promise<void> {
-    const content = serializeBoardFile(board);
+  /** Write a whole note, creating it (and its folder) if it is not there yet. */
+  async writeNote(path: string, content: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile) {
       await this.app.vault.modify(file, content);
@@ -104,22 +118,30 @@ export class BoardRepository {
     await this.app.vault.create(path, content);
   }
 
+  /** Write a board as a note of its own: a heading, then the board's block. */
+  async write(path: string, board: BoardFile): Promise<void> {
+    await this.writeNote(
+      path,
+      boardNote(board.name, serializeBoardFile(board)),
+    );
+  }
+
   /**
-   * Make sure a board exists at `path`, writing `board` there when it does not.
-   * An existing file is left exactly as it is — this is how reopening the
+   * Make sure a note exists at `path`, writing `content` there when it does
+   * not. An existing file is left exactly as it is — this is how reopening the
    * weekly planner returns the board with the week's edits still on it, rather
    * than a fresh one. Returns whether the file had to be created.
    */
-  async ensure(path: string, board: BoardFile): Promise<boolean> {
+  async ensureNote(path: string, content: string): Promise<boolean> {
     if (this.app.vault.getAbstractFileByPath(path) instanceof TFile) {
       return false;
     }
-    await this.write(path, board);
+    await this.writeNote(path, content);
     return true;
   }
 
   /**
-   * Create a new board file named after `name`, avoiding a collision by
+   * Create a new board note named after `name`, avoiding a collision by
    * appending a counter. Returns the path of the file created.
    */
   async create(name: string): Promise<string> {

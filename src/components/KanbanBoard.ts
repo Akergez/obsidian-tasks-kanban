@@ -104,16 +104,25 @@ export class KanbanBoard {
   /** {@link cardColors} parsed; rebuilt whenever the raw setting changes. */
   private colorRules: ColorRule[] = [];
 
+  /**
+   * Switch the note this board is written in to source mode, at the board's
+   * own block — provided by whoever renders the board, since only they know
+   * where its text lives. Absent ⇒ no "Edit text" button.
+   */
+  private readonly onEditSource?: () => void;
+
   constructor(
     container: HTMLElement,
     app: App,
     tasksIntegration: TasksIntegration,
     persistence: BoardStatePersistence,
+    onEditSource?: () => void,
   ) {
     this.container = container;
     this.app = app;
     this.tasksIntegration = tasksIntegration;
     this.persistence = persistence;
+    this.onEditSource = onEditSource;
 
     // Hydrate the canonical query from the persisted query string.
     const initial = persistence.get();
@@ -179,6 +188,7 @@ export class KanbanBoard {
 
     this.createQueryButton(header);
     this.createSettingsButton(header);
+    this.createEditSourceButton(header);
 
     // The lanes render into their own board sub-element.
     this.boardEl = this.container.createDiv({ cls: "tasks-kanban-board" });
@@ -212,6 +222,22 @@ export class KanbanBoard {
       this.persistState();
       this.applyQuery();
     }).open();
+  }
+
+  /**
+   * Add the "Edit text" header button: the way out of the rendered board and
+   * into the document behind it, for anything the modals do not cover.
+   */
+  private createEditSourceButton(header: HTMLElement) {
+    if (!this.onEditSource) {
+      return;
+    }
+    const button = header.createEl("button", {
+      cls: "tasks-kanban-query-button",
+      attr: { type: "button", "aria-label": "Edit board text" },
+    });
+    setIcon(button, "code");
+    button.addEventListener("click", () => this.onEditSource?.());
   }
 
   /**

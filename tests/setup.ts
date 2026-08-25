@@ -59,6 +59,70 @@ vi.mock("obsidian", () => ({
   Workspace: class {},
   MetadataCache: class {},
   TFile: class {},
+  MarkdownView: class {},
+  Modal: class {
+    app: unknown;
+    contentEl = document.createElement("div");
+    constructor(app: unknown) {
+      this.app = app;
+    }
+    open() {}
+    close() {}
+  },
+  Setting: class {
+    constructor(containerEl: HTMLElement) {
+      this.settingEl = containerEl.createDiv();
+      this.controlEl = this.settingEl.createDiv();
+      this.descEl = this.settingEl.createDiv();
+    }
+    settingEl: HTMLElement;
+    controlEl: HTMLElement;
+    descEl: HTMLElement;
+    setName() {
+      return this;
+    }
+    setDesc() {
+      return this;
+    }
+    setClass() {
+      return this;
+    }
+    addText() {
+      return this;
+    }
+    addTextArea() {
+      return this;
+    }
+    addToggle() {
+      return this;
+    }
+    addDropdown() {
+      return this;
+    }
+    addButton() {
+      return this;
+    }
+    addExtraButton() {
+      return this;
+    }
+  },
+  FuzzySuggestModal: class {},
+  setIcon: vi.fn(),
+  MarkdownRenderChild: class {
+    containerEl: HTMLElement;
+    constructor(containerEl: HTMLElement) {
+      this.containerEl = containerEl;
+    }
+    onload() {}
+    onunload() {}
+    load() {
+      this.onload();
+    }
+    unload() {
+      this.onunload();
+    }
+    registerEvent() {}
+  },
   TFolder: class {},
   setTooltip: vi.fn(),
   Menu: MenuStub,
@@ -76,6 +140,10 @@ function normalizePathImpl(path: string): string {
     .trim()
     .normalize("NFC");
 }
+
+// Obsidian exposes the active window's document as a global; JSDom does not.
+(globalThis as Record<string, unknown>).activeDocument ??= document;
+(globalThis as Record<string, unknown>).activeWindow ??= window;
 
 // Apply polyfills directly to the prototype so every element gets them.
 const proto = HTMLElement.prototype as Record<string, unknown>;
@@ -115,6 +183,49 @@ if (!proto.createDiv) {
     this.appendChild(div);
     return div;
   } as (opts?: { cls?: string; text?: string }) => HTMLDivElement;
+}
+if (!proto.createEl) {
+  proto.createEl = function createEl(
+    tag: string,
+    opts?: {
+      cls?: string;
+      text?: string;
+      type?: string;
+      href?: string;
+      attr?: Record<string, string>;
+    },
+  ): HTMLElement {
+    const el = document.createElement(tag);
+    if (opts?.cls) el.className = opts.cls;
+    if (opts?.text) el.textContent = opts.text;
+    if (opts?.type) el.setAttribute("type", opts.type);
+    if (opts?.href) el.setAttribute("href", opts.href);
+    for (const [name, value] of Object.entries(opts?.attr ?? {})) {
+      el.setAttribute(name, String(value));
+    }
+    this.appendChild(el);
+    return el;
+  } as (tag: string, opts?: Record<string, unknown>) => HTMLElement;
+}
+if (!proto.toggleClass) {
+  proto.toggleClass = function toggleClass(cls: string, on: boolean) {
+    this.classList.toggle(cls, on);
+  } as (cls: string, on: boolean) => void;
+}
+if (!proto.hide) {
+  proto.hide = function hide() {
+    this.style.display = "none";
+  } as () => void;
+}
+if (!proto.show) {
+  proto.show = function show() {
+    this.style.display = "";
+  } as () => void;
+}
+if (!proto.isShown) {
+  proto.isShown = function isShown() {
+    return this.style.display !== "none";
+  } as () => boolean;
 }
 if (!proto.createSpan) {
   proto.createSpan = function createSpan(opts?: {

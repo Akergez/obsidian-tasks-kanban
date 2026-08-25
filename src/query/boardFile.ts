@@ -17,13 +17,12 @@ import {
 } from "../utils/dateColumns";
 import { DEFAULT_DATE_FIELD, type DateField } from "../utils/dateFilter";
 
-/** File extension that marks a board document. */
-export const BOARD_EXTENSION = "kanban";
-
 /**
- * A board as it lives on disk: everything about one board, including its fold
- * state. This is the whole file — there is no other place a board's own
- * settings are kept (the shared base query stays in the plugin's data.json).
+ * A board document: everything about one board, including its fold state.
+ *
+ * This is the body of the ```tasks-kanban block a note carries (see
+ * query/markdownBoard) — there is no other place a board's own settings are
+ * kept, the shared base query and colours being all that stays in data.json.
  */
 export interface BoardFile {
   /** Display name. Defaults to the file's base name when the key is absent. */

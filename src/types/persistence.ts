@@ -1,4 +1,4 @@
-import { type DateField, DEFAULT_DATE_FIELD } from "../utils/dateFilter";
+import type { DateField } from "../utils/dateFilter";
 import type { SortState } from "../utils/sortTasks";
 import {
   type TaskFormatSetting,
@@ -122,42 +122,13 @@ export interface BoardActionConfig {
 }
 
 /**
- * A single saved board: a named view. Its `query` holds only the view's own
- * lines (its slice; filters + sort + group); at render time that is merged on
- * top of the shared base query (see {@link PluginData.baseQuery}).
+ * The persisted plugin data: only what is **shared across every board**.
  *
- * This is the legacy in-data.json shape, kept only so old data files can be
- * drained into `.kanban` files (see migrateSavedBoardsToFiles). It predates
- * explicit board types, so `boardType` is absent and inferred on migration.
- */
-export interface SavedBoard {
-  /** Stable identifier (crypto.randomUUID()), used to match open boards. */
-  id: string;
-  /** Which kind of columns this board has; absent ⇒ inferred from the prefix. */
-  boardType?: BoardType;
-  /** Display name, shown in the picker and on the board's tab. */
-  name: string;
-  /** Canonical query lines for this view's own slice (no base prefix). */
-  query: string;
-  /** Column IDs (see KanbanColumnConfig.id) folded on this view's board. */
-  collapsedColumns: string[];
-  /** Group keys (swimlane keys) folded on this view's board. */
-  collapsedGroups?: string[];
-  /** Custom columns; absent/empty ⇒ default status columns. */
-  columns?: ColumnConfig[];
-  /** Tag columns: shared prefix of the board's `#<prefix>_<column>` tags; "" ⇒ off. */
-  columnTagPrefix?: string;
-  /** Tag columns: comma-separated column parts, leftmost first; "" ⇒ alphabetical. */
-  columnOrder?: string;
-  /** Card-spine colour rules, one `<filter> -> <colour>` per line; "" ⇒ none. */
-  cardColors?: string;
-}
-
-/**
- * The persisted plugin data.
- *
- * `baseQuery` is a shared prefix merged into every board (the base board and
- * each saved board). The base board is itself openable as the default view.
+ * A board's own settings live in the board — that is, in the note that carries
+ * its block — so this file holds no board state at all. What is left is the
+ * prefix every board's query is merged with, the colour rules every board
+ * inherits, how dates are written, and where the plugin puts the notes it
+ * creates.
  */
 export interface PluginData {
   /** Shared query prefix applied to every board. */
@@ -167,61 +138,26 @@ export interface PluginData {
    * the Tasks plugin; the concrete values override it for this vault.
    */
   taskFormat: TaskFormatSetting;
-  /** Which kind of columns the base-only board has. */
-  baseBoardType: BoardType;
-  /** Date columns: the field the base-only board's columns are days of. */
-  baseDateField: DateField;
-  /** Date columns: the days the base-only board shows, in order. */
-  baseDateColumns: DateColumnConfig[];
-  /** Date columns: whether the base-only board leads with a "No date" column. */
-  baseNoDateColumn: boolean;
-  /** Folded columns for the base-only board. */
-  baseCollapsedColumns: string[];
-  /** Folded group keys for the base-only board. */
-  baseCollapsedGroups: string[];
-  /** Custom columns for the base-only board; empty ⇒ default status columns. */
-  baseColumns: ColumnConfig[];
-  /** Meta columns for the base-only board, shown before its type's columns. */
-  baseMetaColumns: MetaColumnConfig[];
-  /** Card-menu actions for the base-only board. */
-  baseActions: BoardActionConfig[];
-  /** Tag-column prefix for the base-only board; "" ⇒ status columns. */
-  baseColumnTagPrefix: string;
-  /** Tag-column order for the base-only board; "" ⇒ alphabetical. */
-  baseColumnOrder: string;
-  /** Card-spine colour rules for the base-only board; "" ⇒ none. */
+  /** Card-spine colour rules shared by every board; "" ⇒ none. */
   baseCardColors: string;
-  /** Vault folder holding the `.kanban` board files; "" ⇒ the vault root. */
+  /** Vault folder the board notes live in; "" ⇒ the vault root. */
   boardsFolder: string;
-  /** Vault folder the weekly planner's boards live in; "" ⇒ the vault root. */
+  /** Vault folder the weekly planner's notes live in; "" ⇒ the vault root. */
   weeklyPlannerFolder: string;
-  /**
-   * Legacy in-data.json boards. Drained into `.kanban` files on first load
-   * (see migrateSavedBoardsToFiles) and then always empty.
-   */
-  savedBoards: SavedBoard[];
+  /** The note the weekly planner is rendered from. */
+  weeklyTemplatePath: string;
 }
 
 export const DEFAULT_PLUGIN_DATA: PluginData = {
   baseQuery: "",
   taskFormat: DEFAULT_TASK_FORMAT_SETTING,
-  baseBoardType: DEFAULT_BOARD_TYPE,
-  baseDateField: DEFAULT_DATE_FIELD,
-  baseDateColumns: [],
-  baseNoDateColumn: DEFAULT_NO_DATE_COLUMN,
-  baseCollapsedColumns: [],
-  baseCollapsedGroups: [],
-  baseColumns: [],
-  baseMetaColumns: [],
-  baseActions: [],
-  baseColumnTagPrefix: "",
-  baseColumnOrder: "",
   baseCardColors: "",
   boardsFolder: "Kanban",
   // Nested inside the boards folder by default, so weekly boards also show up
-  // in the board picker and the settings pane.
+  // in the board picker.
   weeklyPlannerFolder: "Kanban/Weekly",
-  savedBoards: [],
+  // In the vault root, where it is easy to find and open; move it anywhere.
+  weeklyTemplatePath: "Tasks Kanban weekly template.md",
 };
 
 /**
@@ -235,10 +171,6 @@ export interface LegacyBoardState {
   selectedTags?: string[];
   /** Single-query model that preceded multiple saved boards. */
   query?: string;
-  /** Folded columns under the single-query model. */
-  collapsedColumns?: string[];
-  /** Pre-rename key for {@link PluginData.savedBoards}; same element shape. */
-  savedQueries?: SavedBoard[];
 }
 
 /**

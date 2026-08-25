@@ -1,18 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   WEEKDAY_TITLES,
-  buildWeeklyBoard,
   isoWeekName,
   startOfWeek,
-  unplannedColumn,
   weekDays,
   weekTag,
+  weekVariables,
 } from "../src/utils/weeklyBoard";
-import { buildMetaColumns } from "../src/utils/metaColumns";
-import { columnCollects } from "../src/utils/columnMatch";
-import type { Task } from "../src/services/TasksIntegration";
-import { boardPath } from "../src/services/BoardRepository";
-import { serializeBoardFile, parseBoardFile } from "../src/query/boardFile";
 
 /** A local-midnight Date for a `YYYY-MM-DD` day. */
 function day(iso: string): Date {
@@ -127,170 +121,47 @@ describe("weekTag", () => {
   });
 });
 
-describe("the pool's preplanning clause", () => {
-  const [pool] = buildMetaColumns([
-    unplannedColumn(day("2026-08-24"), "scheduledDate"),
-  ]);
+describe("weekVariables", () => {
+  const vars = weekVariables(day("2026-08-24"));
 
-  const task = (tags: string[]): Task =>
-    ({
-      status: { symbol: " ", name: "Todo", type: "TODO" },
-      description: "Test task",
-      tags,
-      priority: null,
-      dueDate: null,
-      startDate: null,
-      scheduledDate: null,
-      doneDate: null,
-      createdDate: null,
-      cancelledDate: null,
-      recurrence: null,
-      id: "",
-      dependsOn: [],
-      taskLocation: { path: "note.md", lineNumber: 0 },
-      originalMarkdown: "- [ ] Test task",
-    }) as Task;
-
-  it("keeps work tagged for this week", () => {
-    expect(columnCollects(pool, task(["#w35_2026"]))).toBe(true);
+  it("gives the week in both spellings, plus its ISO year", () => {
+    expect(vars.week).toBe("35");
+    expect(vars.ww).toBe("35");
+    expect(vars.year).toBe("2026");
   });
 
-  it("accepts a padded spelling of this week", () => {
-    expect(columnCollects(pool, task(["#w035_2026"]))).toBe(true);
+  it("pads only the ww spelling", () => {
+    const early = weekVariables(day("2026-01-26"));
+    expect(early.week).toBe("5");
+    expect(early.ww).toBe("05");
   });
 
-  it("drops work tagged for another week", () => {
-    expect(columnCollects(pool, task(["#w36_2026"]))).toBe(false);
-    expect(columnCollects(pool, task(["#w35_2027"]))).toBe(false);
-    expect(columnCollects(pool, task(["#work", "#w2_2026"]))).toBe(false);
+  it("names the seven days from Monday", () => {
+    expect(vars.monday).toBe("2026-08-24");
+    expect(vars.sunday).toBe("2026-08-30");
+    expect(vars.nextMonday).toBe("2026-08-31");
   });
 
-  it("keeps work carrying no week tag at all", () => {
-    expect(columnCollects(pool, task([]))).toBe(true);
-    expect(columnCollects(pool, task(["#work", "#w_2026"]))).toBe(true);
-  });
-});
-
-describe("buildWeeklyBoard", () => {
-  const board = buildWeeklyBoard(day("2026-08-24"), "scheduledDate");
-
-  it("is a date board named after its ISO week", () => {
-    expect(board.name).toBe("2026-W35");
-    expect(board.boardType).toBe("date");
-    expect(board.dateField).toBe("scheduledDate");
+  it("gives the neighbouring weeks their own number and year", () => {
+    expect(vars.nextWeek).toBe("36");
+    expect(vars.nextYear).toBe("2026");
+    expect(vars.prevWeek).toBe("34");
+    expect(vars.prevYear).toBe("2026");
   });
 
-  it("has one column per weekday, Monday first", () => {
-    expect(board.dateColumns.map((c) => c.title)).toEqual(WEEKDAY_TITLES);
-    expect(board.dateColumns[0].date).toBe("2026-08-24");
-    expect(board.dateColumns[6].date).toBe("2026-08-30");
+  it("carries the year boundary, which arithmetic on {{week}} would not", () => {
+    const last = weekVariables(startOfWeek(day("2026-12-28")));
+    expect(last.week).toBe("53");
+    expect(last.year).toBe("2026");
+    expect(last.nextWeek).toBe("1");
+    expect(last.nextYear).toBe("2027");
   });
 
-  it("derives column ids from the day, so the file is reproducible", () => {
-    expect(buildWeeklyBoard(day("2026-08-24"), "scheduledDate")).toEqual(board);
-    expect(board.dateColumns[0].id).toBe("date:2026-08-24");
-  });
-
-  it("uses the field it is given", () => {
-    expect(buildWeeklyBoard(day("2026-08-24"), "dueDate").dateField).toBe(
-      "dueDate",
-    );
-  });
-
-  it("leads with the unplanned pool, filtered on the board's own field", () => {
-    expect(board.metaColumns).toEqual([
-      {
-        id: "meta:unplanned",
-        title: "Unplanned",
-        filter: [
-          "not done",
-          "(no scheduled date) OR (scheduled before 2026-08-24)",
-          String.raw`(tag regex matches /^#w0*35_2026$/) OR NOT (tag regex matches /^#w\d+_\d{4}$/)`,
-        ].join("\n"),
-        mutation: "set not done\nclear scheduled date",
-      },
-    ]);
-  });
-
-  it("pools against the week's own Monday, not against today", () => {
-    // Otherwise the planner would empty its own earlier days as the week ran on.
-    const next = buildWeeklyBoard(day("2026-08-31"), "scheduledDate");
-    expect(next.metaColumns[0].filter).toContain("scheduled before 2026-08-31");
-  });
-
-  it("has no 'No date' column — the pool already holds that work", () => {
-    expect(board.noDateColumn).toBe(false);
-  });
-
-  it("writes the pool against whichever date field the planner uses", () => {
-    const due = buildWeeklyBoard(day("2026-08-24"), "dueDate");
-    expect(due.metaColumns[0].filter).toContain(
-      "(no due date) OR (due before 2026-08-24)",
-    );
-    expect(due.metaColumns[0].mutation).toBe("set not done\nclear due date");
-  });
-
-  it("offers Next week, Cancel and Done on a card's menu", () => {
-    expect(board.actions.map((a) => a.title)).toEqual([
-      "Next week",
-      "Cancel",
-      "Done",
-    ]);
-    expect(board.actions[1].mutation).toBe("set status.type CANCELLED");
-    expect(board.actions[2].mutation).toBe("set done");
-  });
-
-  it("hands a task to the next week, taking it out of this one", () => {
-    expect(board.actions[0].mutation).toBe(
-      [
-        "clear scheduled date",
-        "remove tag #w35_2026",
-        "add tag #w36_2026",
-      ].join("\n"),
-    );
-  });
-
-  it("carries the week boundary into the next year's numbering", () => {
-    const last = buildWeeklyBoard(
-      startOfWeek(day("2026-12-28")),
-      "scheduledDate",
-    );
-    expect(last.name).toBe("2026-W53");
-    expect(last.actions[0].mutation).toContain("add tag #w1_2027");
-  });
-
-  it("clears the planner's own date field, whichever it is", () => {
-    const due = buildWeeklyBoard(day("2026-08-24"), "dueDate");
-    expect(due.actions[0].mutation).toContain("clear due date");
-  });
-
-  it("round-trips through the board file format", () => {
-    const { board: parsed, errors } = parseBoardFile(
-      serializeBoardFile(board),
-      "fallback",
-    );
-    expect(errors).toEqual([]);
-    expect(parsed).toEqual(board);
-  });
-
-  it("lands on the same path for the same week", () => {
-    expect(boardPath("Kanban/Weekly", board.name)).toBe(
-      "Kanban/Weekly/2026-W35.kanban",
-    );
-  });
-});
-
-describe("boardPath", () => {
-  it("puts a board in the vault root for an empty folder", () => {
-    expect(boardPath("", "2026-W35")).toBe("2026-W35.kanban");
-    expect(boardPath("   ", "2026-W35")).toBe("2026-W35.kanban");
-  });
-
-  it("strips characters a vault path cannot carry", () => {
-    expect(boardPath("Kanban", "Q2: plan")).toBe("Kanban/Q2 plan.kanban");
-  });
-
-  it("falls back to a usable name when nothing survives sanitising", () => {
-    expect(boardPath("Kanban", "***")).toBe("Kanban/Board.kanban");
+  it("carries it backwards too", () => {
+    const first = weekVariables(startOfWeek(day("2027-01-04")));
+    expect(first.week).toBe("1");
+    expect(first.year).toBe("2027");
+    expect(first.prevWeek).toBe("53");
+    expect(first.prevYear).toBe("2026");
   });
 });

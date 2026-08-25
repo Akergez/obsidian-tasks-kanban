@@ -1,6 +1,6 @@
-import { Plugin, TFile, type WorkspaceLeaf, Notice } from "obsidian";
+import { MarkdownView, Plugin, TFile, Notice } from "obsidian";
 
-import { TasksBoardView, BOARD_VIEW_TYPE } from "./views/TasksBoardView";
+import { BoardBlock } from "./components/BoardBlock";
 import { TasksIntegration, type StatusInfo } from "./services/TasksIntegration";
 import { TasksKanbanSettingsTab } from "./settings/SettingsTab";
 import { BoardPickerModal } from "./components/BoardPickerModal";
@@ -9,20 +9,18 @@ import {
   boardPath,
   type BoardEntry,
 } from "./services/BoardRepository";
-import { BOARD_EXTENSION, emptyBoardFile } from "./query/boardFile";
+import { BOARD_BLOCK_LANGUAGE } from "./query/markdownBoard";
+import {
+  DEFAULT_WEEKLY_TEMPLATE,
+  renderWeeklyTemplate,
+} from "./query/weeklyTemplate";
 import {
   DEFAULT_PLUGIN_DATA,
-  resolveBoardType,
-  resolveNoDateColumn,
-  type BoardOwnState,
-  type BoardStatePersistence,
   type LegacyBoardState,
   type PluginData,
 } from "./types/persistence";
-import { resolveDateField } from "./utils/dateColumns";
-import { DEFAULT_DATE_FIELD } from "./utils/dateFilter";
 import { resolveTaskFormatSetting } from "./utils/taskFormat";
-import { buildWeeklyBoard, startOfWeek } from "./utils/weeklyBoard";
+import { isoWeekName, startOfWeek } from "./utils/weeklyBoard";
 import {
   EMPTY_QUERY,
   serializeQuery,
@@ -39,15 +37,10 @@ export type SettingsSlice = Pick<
   PluginData,
   | "baseQuery"
   | "taskFormat"
-  | "baseBoardType"
-  | "baseColumns"
-  | "baseColumnTagPrefix"
-  | "baseColumnOrder"
-  | "baseDateField"
-  | "baseDateColumns"
   | "baseCardColors"
   | "boardsFolder"
   | "weeklyPlannerFolder"
+  | "weeklyTemplatePath"
 >;
 
 /**
@@ -88,68 +81,15 @@ export default class TasksKanbanPlugin extends Plugin {
     return this.boards;
   }
 
-  /** The openable boards: the base board plus every board file. */
+  /** The openable boards: every note in the boards folder. */
   getBoards(): { id: string; name: string }[] {
-    return [
-      { id: "", name: "Board (base)" },
-      ...this.getBoardRepository()
-        .list()
-        .map((b: BoardEntry) => ({ id: b.path, name: b.name })),
-    ];
+    return this.getBoardRepository()
+      .list()
+      .map((b: BoardEntry) => ({ id: b.path, name: b.name }));
   }
 
   /**
-   * Persistence for the base board — the one view that is not backed by a file.
-   * Board files are owned by their view (a TextFileView).
-   */
-  baseBoardPersistence(): BoardStatePersistence {
-    return {
-      getBaseQuery: () => this.data.baseQuery,
-      // The base board's own colour rules ARE the shared ones, so there is
-      // nothing to append: merging here would just duplicate every rule.
-      getBaseCardColors: () => "",
-      get: () => ({
-        query: this.data.baseQuery,
-        boardType: this.data.baseBoardType,
-        collapsedColumns: this.data.baseCollapsedColumns,
-        collapsedGroups: this.data.baseCollapsedGroups,
-        columns: this.data.baseColumns,
-        metaColumns: this.data.baseMetaColumns,
-        actions: this.data.baseActions,
-        columnTagPrefix: this.data.baseColumnTagPrefix,
-        columnOrder: this.data.baseColumnOrder,
-        dateField: this.data.baseDateField,
-        dateColumns: this.data.baseDateColumns,
-        noDateColumn: this.data.baseNoDateColumn,
-        cardColors: this.data.baseCardColors,
-      }),
-      // The base board owns its whole slice now that a board's settings are
-      // edited on the board itself; the settings pane only keeps what is
-      // shared across every board.
-      save: (state: BoardOwnState) => {
-        this.data = {
-          ...this.data,
-          baseQuery: state.query,
-          baseBoardType: state.boardType,
-          baseCollapsedColumns: state.collapsedColumns,
-          baseCollapsedGroups: state.collapsedGroups,
-          baseColumns: state.columns,
-          baseMetaColumns: state.metaColumns,
-          baseActions: state.actions,
-          baseColumnTagPrefix: state.columnTagPrefix,
-          baseColumnOrder: state.columnOrder,
-          baseDateField: state.dateField,
-          baseDateColumns: state.dateColumns,
-          baseNoDateColumn: state.noDateColumn,
-          baseCardColors: state.cardColors,
-        };
-        return this.saveData(this.data);
-      },
-    };
-  }
-
-  /**
-   * Persist the settings-owned slice of the plugin data, then refresh open
+   * Persist the settings-owned slice of the plugin data, then re-render open
    * boards so a base-query or folder change takes effect immediately.
    */
   async saveSettings(settings: SettingsSlice) {
@@ -159,37 +99,90 @@ export default class TasksKanbanPlugin extends Plugin {
     this.refreshOpenBoards();
   }
 
-  /** Re-read every open board, after something outside the view changed it. */
+  /**
+   * Re-render every board on screen, after a shared setting changed under it.
+   *
+   * Boards are code blocks now, so this asks Obsidian to re-run its markdown
+   * post-processors rather than reaching into a view of our own.
+   */
   refreshOpenBoards(): void {
-    for (const leaf of this.app.workspace.getLeavesOfType(BOARD_VIEW_TYPE)) {
-      const view = leaf.view;
-      if (view instanceof TasksBoardView) {
-        view.refresh();
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      if (leaf.view instanceof MarkdownView) {
+        leaf.view.previewMode?.rerender(true);
       }
     }
   }
 
   /**
+   * The weekly template, creating it from the default the first time it is
+   * asked for. Its path is a setting, so a vault can keep it anywhere; the
+   * plugin's own copy lands in the vault root.
+   */
+  async weeklyTemplate(): Promise<string> {
+    const path =
+      this.data.weeklyTemplatePath.trim() ||
+      DEFAULT_PLUGIN_DATA.weeklyTemplatePath;
+    const repository = this.getBoardRepository();
+    const created = await repository.ensureNote(path, DEFAULT_WEEKLY_TEMPLATE);
+    if (created) {
+      new Notice(`Tasks Kanban: created the weekly template at ${path}`);
+    }
+
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      // Unwritable path (a folder in the way, a read-only vault): fall back to
+      // the built-in template rather than refusing to open the planner.
+      new Notice(`Tasks Kanban: could not read the template at ${path}`);
+      return DEFAULT_WEEKLY_TEMPLATE;
+    }
+    return this.app.vault.read(file);
+  }
+
+  /**
    * Open this week's planner, creating it the first time it is asked for.
    *
-   * The board's name is its ISO week (`2026-W35`), which is also its file name,
-   * so the same week always resolves to the same file: asking again later in
-   * the week reopens the board you have been planning in, edits and all. A new
-   * week simply has no file yet, so one is written.
+   * The note's name is the ISO week (`2026-W35`), so the same week always
+   * resolves to the same file: asking again later in the week reopens the board
+   * you have been planning in, edits and all. A new week simply has no note
+   * yet, so the template is rendered for it and written.
+   *
+   * The name stays the plugin's to decide even though everything else about the
+   * planner is the template's: it is what makes "this week's board" findable
+   * without rendering and parsing the template first.
    */
   async openWeeklyPlanner(): Promise<string> {
-    const board = buildWeeklyBoard(startOfWeek(new Date()), DEFAULT_DATE_FIELD);
-    const path = boardPath(this.data.weeklyPlannerFolder, board.name);
-    const created = await this.getBoardRepository().ensure(path, board);
-    if (created) {
+    const monday = startOfWeek(new Date());
+    const path = boardPath(this.data.weeklyPlannerFolder, isoWeekName(monday));
+
+    const repository = this.getBoardRepository();
+    if (!(this.app.vault.getAbstractFileByPath(path) instanceof TFile)) {
+      const { text, errors } = renderWeeklyTemplate(
+        await this.weeklyTemplate(),
+        monday,
+      );
+      for (const error of errors) {
+        new Notice(`Tasks Kanban: ${error}`);
+      }
+      await repository.writeNote(path, text);
       new Notice(`Tasks Kanban: created ${path}`);
     }
+
+    await this.openBoard(path);
+    return path;
+  }
+
+  /** Open the weekly template itself, for editing. Creates it if absent. */
+  async openWeeklyTemplate(): Promise<string> {
+    await this.weeklyTemplate();
+    const path =
+      this.data.weeklyTemplatePath.trim() ||
+      DEFAULT_PLUGIN_DATA.weeklyTemplatePath;
     await this.openBoard(path);
     return path;
   }
 
   /**
-   * Create a fresh board file and open it. Returns the new file's path.
+   * Create a fresh board note and open it. Returns the new file's path.
    */
   async createAndOpenBlankBoard(): Promise<string> {
     const path = await this.getBoardRepository().create("Untitled board");
@@ -216,34 +209,26 @@ export default class TasksKanbanPlugin extends Plugin {
     this.addSettingTab(new TasksKanbanSettingsTab(this.app, this));
 
     const tasksIntegration = this.tasksIntegration;
-    this.registerView(BOARD_VIEW_TYPE, (leaf: WorkspaceLeaf) => {
-      return new TasksBoardView(leaf, tasksIntegration, {
-        getBaseQuery: () => this.data.baseQuery,
-        getBaseCardColors: () => this.data.baseCardColors,
-        baseBoardPersistence: () => this.baseBoardPersistence(),
-      });
-    });
-
-    // Clicking a .kanban file in the file explorer opens the board view.
-    this.registerExtensions([BOARD_EXTENSION], BOARD_VIEW_TYPE);
-
-    // Board files written before this version lived inside data.json.
-    await this.migrateSavedBoardsToFiles();
-
-    this.addCommand({
-      id: "open-board",
-      name: "Open board",
-      callback: () => {
-        void this.openBaseBoard();
+    // A board is a fenced block in a note, so Obsidian renders it wherever it
+    // is written — including inside a daily note next to everything else.
+    this.registerMarkdownCodeBlockProcessor(
+      BOARD_BLOCK_LANGUAGE,
+      (source, el, ctx) => {
+        ctx.addChild(
+          new BoardBlock(el, source, ctx, this.app, tasksIntegration, {
+            getBaseQuery: () => this.data.baseQuery,
+            getBaseCardColors: () => this.data.baseCardColors,
+          }),
+        );
       },
-    });
+    );
 
     this.addCommand({
       id: "open-saved-query",
       name: "Open board…",
       callback: () => {
         new BoardPickerModal(this.app, this.getBoards(), (id) => {
-          void (id === "" ? this.openBaseBoard() : this.openBoard(id));
+          void this.openBoard(id);
         }).open();
       },
     });
@@ -261,6 +246,14 @@ export default class TasksKanbanPlugin extends Plugin {
       name: "Open weekly planner",
       callback: () => {
         void this.openWeeklyPlanner();
+      },
+    });
+
+    this.addCommand({
+      id: "open-weekly-template",
+      name: "Edit weekly planner template",
+      callback: () => {
+        void this.openWeeklyTemplate();
       },
     });
 
@@ -288,93 +281,29 @@ export default class TasksKanbanPlugin extends Plugin {
   private async loadPluginData() {
     const data = (await this.loadData()) as
       (Partial<PluginData> & LegacyBoardState) | null;
-    const baseColumnTagPrefix =
-      data?.baseColumnTagPrefix ?? DEFAULT_PLUGIN_DATA.baseColumnTagPrefix;
     this.data = {
       baseQuery: data?.baseQuery ?? data?.query ?? migrateLegacyQuery(data),
       taskFormat: resolveTaskFormatSetting(data?.taskFormat),
-      // Data files written before board types were explicit carry none, so the
-      // base board keeps the kind its tag prefix used to imply.
-      baseBoardType: resolveBoardType(data?.baseBoardType, baseColumnTagPrefix),
-      baseDateField: resolveDateField(data?.baseDateField),
-      baseDateColumns:
-        data?.baseDateColumns ?? DEFAULT_PLUGIN_DATA.baseDateColumns,
-      baseNoDateColumn: resolveNoDateColumn(data?.baseNoDateColumn),
-      baseCollapsedColumns:
-        data?.baseCollapsedColumns ??
-        data?.collapsedColumns ??
-        DEFAULT_PLUGIN_DATA.baseCollapsedColumns,
-      baseCollapsedGroups:
-        data?.baseCollapsedGroups ?? DEFAULT_PLUGIN_DATA.baseCollapsedGroups,
-      baseColumns: data?.baseColumns ?? DEFAULT_PLUGIN_DATA.baseColumns,
-      baseMetaColumns:
-        data?.baseMetaColumns ?? DEFAULT_PLUGIN_DATA.baseMetaColumns,
-      baseActions: data?.baseActions ?? DEFAULT_PLUGIN_DATA.baseActions,
-      baseColumnTagPrefix,
-      baseColumnOrder:
-        data?.baseColumnOrder ?? DEFAULT_PLUGIN_DATA.baseColumnOrder,
       baseCardColors:
         data?.baseCardColors ?? DEFAULT_PLUGIN_DATA.baseCardColors,
       boardsFolder: data?.boardsFolder ?? DEFAULT_PLUGIN_DATA.boardsFolder,
       weeklyPlannerFolder:
         data?.weeklyPlannerFolder ?? DEFAULT_PLUGIN_DATA.weeklyPlannerFolder,
-      // Read only so the one-time migration below can drain it.
-      savedBoards:
-        data?.savedBoards ??
-        data?.savedQueries ??
-        DEFAULT_PLUGIN_DATA.savedBoards,
+      weeklyTemplatePath:
+        data?.weeklyTemplatePath ?? DEFAULT_PLUGIN_DATA.weeklyTemplatePath,
     };
   }
 
-  /**
-   * One-time migration: boards used to live as entries in data.json. Write each
-   * one out as a `.kanban` file, then clear the list so this never runs twice.
-   * A board whose file already exists is skipped rather than overwritten.
-   */
-  private async migrateSavedBoardsToFiles(): Promise<void> {
-    if (this.data.savedBoards.length === 0) {
-      return;
-    }
-
-    const repository = this.getBoardRepository();
-    for (const saved of this.data.savedBoards) {
-      const columnTagPrefix = saved.columnTagPrefix ?? "";
-      const board = {
-        ...emptyBoardFile(saved.name || "Board"),
-        query: saved.query ?? "",
-        // These boards predate explicit types, so the old implicit rule decides.
-        boardType: resolveBoardType(saved.boardType, columnTagPrefix),
-        columns: saved.columns ?? [],
-        columnTagPrefix,
-        columnOrder: saved.columnOrder ?? "",
-        cardColors: saved.cardColors ?? "",
-        collapsedColumns: saved.collapsedColumns ?? [],
-        collapsedGroups: saved.collapsedGroups ?? [],
-      };
-      const path = await repository.create(board.name);
-      await repository.write(path, board);
-    }
-
-    const count = this.data.savedBoards.length;
-    this.data = { ...this.data, savedBoards: [] };
-    await this.saveData(this.data);
-    new Notice(
-      `Tasks Kanban: moved ${count} board${count === 1 ? "" : "s"} into ${
-        this.data.boardsFolder || "the vault root"
-      }.`,
-    );
-  }
-
-  /** Open a board file, focusing it if it is already open. */
+  /** Open a board note, focusing it if it is already open. */
   async openBoard(path: string): Promise<void> {
     const existing = this.app.workspace
-      .getLeavesOfType(BOARD_VIEW_TYPE)
+      .getLeavesOfType("markdown")
       .find(
         (leaf) =>
-          leaf.view instanceof TasksBoardView && leaf.view.file?.path === path,
+          leaf.view instanceof MarkdownView && leaf.view.file?.path === path,
       );
     if (existing) {
-      this.app.workspace.setActiveLeaf(existing);
+      this.app.workspace.setActiveLeaf(existing, { focus: true });
       return;
     }
 
@@ -384,20 +313,5 @@ export default class TasksKanbanPlugin extends Plugin {
       return;
     }
     await this.app.workspace.getLeaf(true).openFile(file);
-  }
-
-  /** Open the base board — the fileless view driven by the base query. */
-  async openBaseBoard(): Promise<void> {
-    const existing = this.app.workspace
-      .getLeavesOfType(BOARD_VIEW_TYPE)
-      .find((leaf) => leaf.view instanceof TasksBoardView && !leaf.view.file);
-    if (existing) {
-      this.app.workspace.setActiveLeaf(existing);
-      return;
-    }
-
-    const leaf = this.app.workspace.getLeaf(true);
-    await leaf.setViewState({ type: BOARD_VIEW_TYPE, active: true });
-    this.app.workspace.setActiveLeaf(leaf);
   }
 }
