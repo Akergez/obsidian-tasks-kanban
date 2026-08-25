@@ -50,11 +50,14 @@ obsidian-tasks-kanban/
 ├── src/
 │   ├── main.ts                      # Plugin entry point, commands, persistence
 │   ├── services/
+│   │   ├── BoardNotes.ts            # Which notes are boards (frontmatter marker)
+│   │   ├── BoardIcons.ts            # The board icon in the file explorer
 │   │   ├── TasksIntegration.ts      # Integration with Tasks plugin + statuses
 │   │   ├── BoardRepository.ts       # Read/write the vault's .kanban board files
 │   │   └── TaskUpdater.ts           # Update task status in source files
+│   ├── views/
+│   │   └── TasksBoardView.ts        # The full-screen board (a TextFileView over the note)
 │   ├── components/
-│   │   ├── BoardBlock.ts            # A board rendered in its ```tasks-kanban block
 │   │   ├── KanbanBoard.ts           # Board logic (query, grouping, columns)
 │   │   ├── KanbanLane.ts            # Swimlane (one per group)
 │   │   ├── KanbanColumn.ts          # Column component (drop zone)
@@ -97,15 +100,20 @@ obsidian-tasks-kanban/
 
 ### Board Storage
 
-A board is a fenced ```tasks-kanban block inside an **ordinary note**. `main.ts` registers a markdown code-block processor for it, so Obsidian renders the board wherever the block is written — a note of its own, or halfway down a daily note. The block's body is the board document (`query/boardFile.ts`, hand-serialized YAML so multi-line fields come out as block scalars, parsed via Obsidian's `parseYaml`); `query/markdownBoard.ts` owns finding and rewriting the block itself.
+A board is a fenced ```tasks-kanban block inside an **ordinary note**. The block's body is the board document (`query/boardFile.ts`, hand-serialized YAML so multi-line fields come out as block scalars, parsed via Obsidian's `parseYaml`); `query/markdownBoard.ts` owns finding and rewriting the block itself.
 
-`components/BoardBlock.ts` is a `MarkdownRenderChild`: Obsidian's own lifecycle tears the board down when the note closes or the block changes. Everything the board persists — folds, settings, query — is written back into **its own block** via `replaceBoardBlockBody` and `vault.process`, so the heading above and the prose below are untouched. Two things make it safe: the write is skipped entirely when `getSectionInfo` cannot say which lines the block spans, and `replaceBoardBlockBody` returns the note unchanged if the range is not a fenced block.
+A board **opens full screen, in its own tab**: `views/TasksBoardView.ts` is a `TextFileView` over the note, so Obsidian owns reading and writing the bytes and the view owns the block. Everything else in the note — the frontmatter, the heading, any prose below — is carried through untouched, because a save replaces the block's body via `replaceBoardBlockBody` and nothing else. A note that holds no block reports `hasBoard() === false` and is never rewritten.
 
-A board's header carries an **Edit text** button (`KanbanBoard`'s `onEditSource`, supplied by `BoardBlock`): it switches the note to source mode with the cursor on the block, the way Tasks lets you get back to a query.
+Getting there and back:
+
+- A note **declares itself a board** in its frontmatter (`tasks-kanban: true`, `services/BoardNotes.ts`). `main.ts` watches `file-open` and hands such a note straight to the board view, which is what makes clicking one in the file explorer open the board. The declaration exists because Obsidian's metadata cache records that a note has a code block but not what language it is in — detecting boards otherwise would mean reading every note in the vault.
+- **Edit text** in the board header (`KanbanBoard`'s `onEditSource`) swaps the same leaf to the markdown editor in source mode.
+- **Open as board** (a command and a file-menu item) swaps back, and works on any note — that is the way in for a board block someone wrote by hand without declaring it.
+- `services/BoardIcons.ts` marks board rows in the file explorer with the board icon. Tabs need no help: the view reports the icon itself. The explorer has no icon API, so the service flags rows with `data-tasks-kanban` on a mutation observer and `styles.css` draws the glyph.
 
 `services/BoardRepository.ts` maps boards onto the vault for everything that is not the open board — the picker, the commands. A board note is any `.md` under the boards folder; the folder is the convention, since proving each file holds a block would mean reading every one of them.
 
-There is no plugin-owned board *view* and no fileless "base board": every board is a block in a note, so `data.json` keeps only what is shared across all of them (base query, base card colours, task format, the two folders, the template path).
+There is no fileless "base board" any more: every board is a note, so `data.json` keeps only what is shared across all of them (base query, base card colours, task format, the two folders, the template path).
 
 ### Tasks Integration
 

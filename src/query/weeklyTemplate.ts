@@ -12,7 +12,11 @@ import { weekVariables } from "../utils/weeklyBoard";
  * Written out verbatim rather than serialized from a BoardFile: the comments
  * and the blank lines are half of what makes it editable.
  */
-export const DEFAULT_WEEKLY_TEMPLATE = `# {{year}}-W{{ww}}
+export const DEFAULT_WEEKLY_TEMPLATE = `---
+tasks-kanban: true
+---
+
+# {{year}}-W{{ww}}
 
 \`\`\`tasks-kanban
 name: {{year}}-W{{ww}}

@@ -1,3 +1,5 @@
+import { BOARD_FRONTMATTER } from "../services/BoardNotes";
+
 /**
  * A board lives inside an ordinary note, as a fenced code block:
  *
@@ -40,11 +42,13 @@ export function boardBlock(body: string): string {
 }
 
 /**
- * A whole note holding one board: a heading, then the block. Written when the
- * plugin creates a board of its own; a user can put the block anywhere.
+ * A whole note holding one board: the frontmatter that declares it a board (so
+ * the file explorer can mark it without reading every note in the vault), a
+ * heading, then the block. Written when the plugin creates a board of its own;
+ * a user can put the block anywhere, declared or not.
  */
 export function boardNote(title: string, body: string): string {
-  return `# ${title}\n\n${boardBlock(body)}\n`;
+  return `${BOARD_FRONTMATTER}# ${title}\n\n${boardBlock(body)}\n`;
 }
 
 /**

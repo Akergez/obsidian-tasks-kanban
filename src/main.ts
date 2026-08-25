@@ -1,6 +1,18 @@
-import { MarkdownView, Plugin, TFile, Notice } from "obsidian";
+import {
+  MarkdownView,
+  Notice,
+  Plugin,
+  TFile,
+  type WorkspaceLeaf,
+} from "obsidian";
 
-import { BoardBlock } from "./components/BoardBlock";
+import { BOARD_ICON, BoardIcons } from "./services/BoardIcons";
+import { BoardNotes } from "./services/BoardNotes";
+import {
+  BOARD_VIEW_TYPE,
+  MARKDOWN_VIEW_TYPE,
+  TasksBoardView,
+} from "./views/TasksBoardView";
 import { TasksIntegration, type StatusInfo } from "./services/TasksIntegration";
 import { TasksKanbanSettingsTab } from "./settings/SettingsTab";
 import { BoardPickerModal } from "./components/BoardPickerModal";
@@ -9,7 +21,6 @@ import {
   boardPath,
   type BoardEntry,
 } from "./services/BoardRepository";
-import { BOARD_BLOCK_LANGUAGE } from "./query/markdownBoard";
 import {
   DEFAULT_WEEKLY_TEMPLATE,
   renderWeeklyTemplate,
@@ -62,6 +73,8 @@ export default class TasksKanbanPlugin extends Plugin {
   private tasksIntegration: TasksIntegration | null = null;
   private data: PluginData = DEFAULT_PLUGIN_DATA;
   private boards: BoardRepository | null = null;
+  /** Which notes are boards, for the icons in the explorer and on tabs. */
+  private boardNotes: BoardNotes | null = null;
 
   /** The base query and base board settings, for the settings tab. */
   getPluginData(): PluginData {
@@ -99,16 +112,12 @@ export default class TasksKanbanPlugin extends Plugin {
     this.refreshOpenBoards();
   }
 
-  /**
-   * Re-render every board on screen, after a shared setting changed under it.
-   *
-   * Boards are code blocks now, so this asks Obsidian to re-run its markdown
-   * post-processors rather than reaching into a view of our own.
-   */
+  /** Re-read every open board, after something outside the view changed it. */
   refreshOpenBoards(): void {
-    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (leaf.view instanceof MarkdownView) {
-        leaf.view.previewMode?.rerender(true);
+    for (const leaf of this.app.workspace.getLeavesOfType(BOARD_VIEW_TYPE)) {
+      const view = leaf.view;
+      if (view instanceof TasksBoardView) {
+        view.refresh();
       }
     }
   }
@@ -208,19 +217,59 @@ export default class TasksKanbanPlugin extends Plugin {
 
     this.addSettingTab(new TasksKanbanSettingsTab(this.app, this));
 
+    // Board notes carry the board icon in the file explorer and on their tabs.
+    this.boardNotes = new BoardNotes(this.app);
+    this.register(new BoardIcons(this.app, this.boardNotes).start());
+
     const tasksIntegration = this.tasksIntegration;
-    // A board is a fenced block in a note, so Obsidian renders it wherever it
-    // is written — including inside a daily note next to everything else.
-    this.registerMarkdownCodeBlockProcessor(
-      BOARD_BLOCK_LANGUAGE,
-      (source, el, ctx) => {
-        ctx.addChild(
-          new BoardBlock(el, source, ctx, this.app, tasksIntegration, {
-            getBaseQuery: () => this.data.baseQuery,
-            getBaseCardColors: () => this.data.baseCardColors,
-          }),
-        );
+    this.registerView(BOARD_VIEW_TYPE, (leaf: WorkspaceLeaf) => {
+      return new TasksBoardView(leaf, tasksIntegration, {
+        getBaseQuery: () => this.data.baseQuery,
+        getBaseCardColors: () => this.data.baseCardColors,
+      });
+    });
+
+    // A board is a note, so Obsidian opens it in the markdown editor first; a
+    // note that declares itself a board is handed straight to the board view,
+    // which is what makes clicking one in the file explorer open the board.
+    this.registerEvent(
+      this.app.workspace.on("file-open", (file) => {
+        if (file) {
+          void this.openAsBoardIfDeclared();
+        }
+      }),
+    );
+
+    this.addCommand({
+      id: "open-as-board",
+      name: "Open this note as a board",
+      checkCallback: (checking) => {
+        const leaf = this.app.workspace.getMostRecentLeaf();
+        const isMarkdown = leaf?.view instanceof MarkdownView;
+        if (!checking && leaf && isMarkdown) {
+          void this.showAsBoard(leaf);
+        }
+        return Boolean(isMarkdown);
       },
+    });
+
+    // The same swap from the file explorer's own menu.
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file, _source, leaf) => {
+        if (!(file instanceof TFile) || file.extension !== "md") {
+          return;
+        }
+        menu.addItem((item) =>
+          item
+            .setTitle("Open as board")
+            .setIcon(BOARD_ICON)
+            .onClick(() => {
+              void (leaf && leaf.view instanceof MarkdownView
+                ? this.showAsBoard(leaf)
+                : this.openBoard(file.path));
+            }),
+        );
+      }),
     );
 
     this.addCommand({
@@ -294,14 +343,49 @@ export default class TasksKanbanPlugin extends Plugin {
     };
   }
 
+  /** Show the note in `leaf` as a board, keeping the same tab. */
+  private async showAsBoard(leaf: WorkspaceLeaf): Promise<void> {
+    const view = leaf.view;
+    const path = view instanceof MarkdownView ? view.file?.path : undefined;
+    const state = leaf.getViewState();
+    await leaf.setViewState({ ...state, type: BOARD_VIEW_TYPE });
+    this.app.workspace.setActiveLeaf(leaf, { focus: true });
+    if (path) {
+      // Shown as a board once ⇒ marked as one in the file explorer, even if the
+      // note never declared itself.
+      this.boardNotes?.remember(path);
+    }
+  }
+
+  /**
+   * Hand the active note to the board view when it declares itself a board.
+   * A note that carries a board block but declares nothing stays in the editor
+   * until asked — "Open as board" is one command, and one file-menu item, away.
+   */
+  private async openAsBoardIfDeclared(): Promise<void> {
+    const leaf = this.app.workspace.getMostRecentLeaf();
+    const view = leaf?.view;
+    if (!leaf || !(view instanceof MarkdownView) || !view.file) {
+      return;
+    }
+    if (this.boardNotes?.isBoard(view.file.path)) {
+      await this.showAsBoard(leaf);
+    }
+  }
+
   /** Open a board note, focusing it if it is already open. */
   async openBoard(path: string): Promise<void> {
-    const existing = this.app.workspace
-      .getLeavesOfType("markdown")
-      .find(
-        (leaf) =>
-          leaf.view instanceof MarkdownView && leaf.view.file?.path === path,
-      );
+    const existing = [
+      ...this.app.workspace.getLeavesOfType(BOARD_VIEW_TYPE),
+      ...this.app.workspace.getLeavesOfType(MARKDOWN_VIEW_TYPE),
+    ].find((leaf) => {
+      const view = leaf.view;
+      const file =
+        view instanceof TasksBoardView || view instanceof MarkdownView
+          ? view.file
+          : null;
+      return file?.path === path;
+    });
     if (existing) {
       this.app.workspace.setActiveLeaf(existing, { focus: true });
       return;

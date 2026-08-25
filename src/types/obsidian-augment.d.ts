@@ -8,6 +8,14 @@ declare module "obsidian" {
     };
   }
 
+  interface WorkspaceLeaf {
+    /**
+     * Redraw the leaf's tab header, picking up a changed `view.icon`. Internal
+     * to Obsidian, so every call site treats it as optional.
+     */
+    updateHeader?(): void;
+  }
+
   interface Workspace {
     on(
       name: "obsidian-tasks-plugin:cache-update",

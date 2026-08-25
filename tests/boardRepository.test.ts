@@ -101,7 +101,15 @@ describe("write", () => {
     await repo.write("Kanban/Sprint.md", emptyBoardFile("Sprint"));
 
     const [, content] = vault.create.mock.calls[0] as [string, string];
-    expect(content.startsWith("# Sprint\n")).toBe(true);
+    expect(content).toContain("# Sprint\n");
     expect(findBoardBlock(content)?.body).toContain("boardType: status");
+  });
+
+  it("declares the note a board, so it opens as one", async () => {
+    const { repo, vault } = repository();
+    await repo.write("Kanban/Sprint.md", emptyBoardFile("Sprint"));
+
+    const [, content] = vault.create.mock.calls[0] as [string, string];
+    expect(content.startsWith("---\ntasks-kanban: true\n---\n")).toBe(true);
   });
 });

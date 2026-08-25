@@ -212,6 +212,10 @@ Status types are the same six the filter language uses. Date fields and days are
 A board is a fenced code block in an ordinary note:
 
 ````markdown
+---
+tasks-kanban: true
+---
+
 # My board
 
 ```tasks-kanban
@@ -221,7 +225,9 @@ dateField: scheduled
 ```
 ````
 
-Obsidian renders it wherever the block is written, so a board can be a note of its own or sit halfway down a daily note. Everything the board saves — folded columns, settings, the query — goes back into that block and nothing else in the note is touched. The **Edit text** button in the board header switches the note to source mode with the cursor on the block, for anything the settings modal does not cover.
+The note opens as a board, full screen in its own tab — a note counts as a board when its frontmatter says `tasks-kanban: true`, which is what the plugin writes into the boards it creates. Everything the board saves — folded columns, settings, the query — goes back into that block, and nothing else in the note is touched.
+
+The **Edit text** button in the board header hands the same note to the markdown editor, for anything the settings modal does not cover. **Open as board** (a command, and an item in the file menu) brings the board back — and is also how to open a board block you wrote in a note that declares nothing.
 
 ## Card Actions
 
