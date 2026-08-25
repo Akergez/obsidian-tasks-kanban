@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.18.0...0.18.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* board render ([a21ad4b](https://github.com/Akergez/obsidian-tasks-kanban/commit/a21ad4b1b8ab12542405a359b4db7e9792988aa6))
+
 ## [0.18.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.17.0...0.18.0) (2026-08-25)
 
 
