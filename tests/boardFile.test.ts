@@ -319,6 +319,34 @@ describe("parseBoardFile", () => {
     expect(parsed.metaColumns).toEqual([]);
   });
 
+  it("preserves meta cards", () => {
+    const input = board({
+      metaCards: [
+        {
+          id: "card:ongoing",
+          title: "Ongoing",
+          filter:
+            "(starts on {{day}}) OR ((starts before {{day}}) AND (has due date) AND NOT (due before {{day}}))",
+        },
+        { id: "card:pinned", title: "", filter: "not done\ntag includes #pin" },
+      ],
+    });
+    expect(roundTrip(input)).toEqual(input);
+  });
+
+  it("drops a meta card with no filter, which would match every task", () => {
+    const { board: parsed } = parseBoardFile(
+      ["metaCards:", "  - id: card:empty", "    title: Everything"].join("\n"),
+      "fallback",
+    );
+    expect(parsed.metaCards).toEqual([]);
+  });
+
+  it("reports a metaCards key that is not a list", () => {
+    const { errors } = parseBoardFile("metaCards: nope", "fallback");
+    expect(errors).toEqual(["`metaCards` must be a list; ignoring it."]);
+  });
+
   it("reports a metaColumns key that is not a list", () => {
     const { errors } = parseBoardFile("metaColumns: nope", "fallback");
     expect(errors).toEqual(["`metaColumns` must be a list; ignoring it."]);

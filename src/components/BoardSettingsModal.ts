@@ -3,6 +3,7 @@ import { App, Modal, Setting } from "obsidian";
 import { parseQuery } from "../query/boardQuery";
 import { parseColorRules } from "../utils/cardColors";
 import { metaColumnErrors } from "../utils/metaColumns";
+import { metaCardErrors } from "../utils/metaCards";
 import { boardActionErrors } from "../utils/boardActions";
 import type { StatusInfo } from "../services/TasksIntegration";
 import type {
@@ -10,6 +11,7 @@ import type {
   BoardType,
   ColumnConfig,
   DateColumnConfig,
+  MetaCardConfig,
   MetaColumnConfig,
 } from "../types/persistence";
 import {
@@ -38,6 +40,7 @@ export interface BoardSettingsDraft {
   columns: ColumnConfig[];
   metaColumns: MetaColumnConfig[];
   actions: BoardActionConfig[];
+  metaCards: MetaCardConfig[];
   cardColors: string;
 }
 
@@ -114,6 +117,15 @@ const META_FILTER_PLACEHOLDER = [
 const META_MUTATION_PLACEHOLDER = ["set not done", "clear scheduled date"].join(
   "\n",
 );
+
+const META_CARDS_DESC =
+  "Read-only cards shown in every column whose filter a task matches, besides " +
+  "the column's own cards — so one task can appear in several columns. They " +
+  "cannot be dragged. {{day}} stands for the column's day; a column with no " +
+  "day shows no card whose filter names it.";
+
+const META_CARD_FILTER_PLACEHOLDER =
+  "(starts on {{day}}) OR ((starts before {{day}}) AND (has due date) AND NOT (due before {{day}}))";
 
 const ACTIONS_DESC =
   "Named mutations offered in a card's right-click menu on this board. Same " +
@@ -197,6 +209,7 @@ export class BoardSettingsModal extends Modal {
       columns: draft.columns.map((c) => ({ ...c, symbols: [...c.symbols] })),
       metaColumns: draft.metaColumns.map((c) => ({ ...c })),
       actions: draft.actions.map((a) => ({ ...a })),
+      metaCards: draft.metaCards.map((c) => ({ ...c })),
     };
     this.statuses = statuses;
     this.onSubmit = onSubmit;
@@ -254,6 +267,7 @@ export class BoardSettingsModal extends Modal {
       // A meta column with no usable filter could collect nothing; Save is
       // blocked on it, so this only guards against an empty leftover row.
       metaColumns: this.draft.metaColumns.filter((c) => c.filter.trim() !== ""),
+      metaCards: this.draft.metaCards.filter((c) => c.filter.trim() !== ""),
     };
   }
 
@@ -263,6 +277,7 @@ export class BoardSettingsModal extends Modal {
     this.renderQueryField(this.bodyEl);
     this.renderBoardType(this.bodyEl);
     this.renderMetaColumnFields(this.bodyEl);
+    this.renderMetaCardFields(this.bodyEl);
     this.renderActionFields(this.bodyEl);
     this.renderCardColorsField(this.bodyEl);
   }
@@ -371,6 +386,75 @@ export class BoardSettingsModal extends Modal {
     }
 
     this.validateMetaColumns(errorEl);
+  }
+
+  /**
+   * Meta cards: any number of rules, on any board type. Each is a name and a
+   * filter, rendered per column; matching tasks show there read-only.
+   */
+  private renderMetaCardFields(containerEl: HTMLElement): void {
+    new Setting(containerEl)
+      .setName("Meta cards")
+      .setDesc(META_CARDS_DESC)
+      .addButton((button) => {
+        button.setButtonText("Add meta cards").onClick(() => {
+          this.draft.metaCards = [
+            ...this.draft.metaCards,
+            { id: newColumnId(), title: "", filter: "" },
+          ];
+          this.render();
+        });
+      });
+
+    const errorEl = containerEl.createDiv({
+      cls: "tasks-kanban-settings-errors",
+    });
+
+    for (const card of this.draft.metaCards) {
+      new Setting(containerEl)
+        .setClass("tasks-kanban-setting-column")
+        .addText((text) => {
+          text
+            .setPlaceholder("Rule name")
+            .setValue(card.title)
+            .onChange((value) => {
+              card.title = value;
+            });
+        })
+        .addExtraButton((button) => {
+          button
+            .setIcon("trash")
+            .setTooltip("Delete rule")
+            .onClick(() => {
+              this.draft.metaCards = this.draft.metaCards.filter(
+                (c) => c.id !== card.id,
+              );
+              this.render();
+            });
+        });
+
+      new Setting(containerEl)
+        .setClass("tasks-kanban-setting-query")
+        .setName("Filter")
+        .setDesc("Which tasks a column shows read-only. One filter per line.")
+        .addTextArea((textArea) => {
+          textArea.inputEl.rows = 3;
+          textArea.inputEl.spellcheck = false;
+          textArea.inputEl.placeholder = META_CARD_FILTER_PLACEHOLDER;
+          textArea.setValue(card.filter);
+          textArea.onChange((value) => {
+            card.filter = value;
+            this.validateMetaCards(errorEl);
+          });
+        });
+    }
+
+    this.validateMetaCards(errorEl);
+  }
+
+  /** Reject a rule that would show every task, or a line the parser cannot read. */
+  private validateMetaCards(errorEl: HTMLElement): void {
+    this.validate("metaCards", metaCardErrors(this.draft.metaCards), errorEl);
   }
 
   /**

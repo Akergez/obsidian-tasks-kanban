@@ -22,19 +22,26 @@
     margin-bottom: 12px;
 }
 
-/* Search bar */
+/*
+ * Search bar. It is the one header item that can give up width, so it is the
+ * one that does: a small basis (not its content's width) lets the controls
+ * after it stay on the same row, and the search grows into whatever is left.
+ * The row wraps only when even the shrunken search no longer fits.
+ */
 .tasks-kanban-search {
     display: flex;
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 8px;
-    flex: 1 1 auto;
+    flex: 1 1 220px;
+    min-width: 0;
 }
 
 .tasks-kanban-search-input {
-    flex: 1 1 200px;
-    min-width: 160px;
+    flex: 1 1 120px;
+    min-width: 80px;
+    width: 0;
     padding: 6px 10px;
     background-color: var(--background-primary);
     color: var(--text-normal);
@@ -761,6 +768,34 @@
 
 .theme-dark .tasks-kanban-card-chip {
     background-color: var(--background-tertiary, #3d3d3d);
+}
+
+/* Meta card: a read-only reference to a task whose own card is elsewhere. A
+   faint accent tint over the card's usual background sets it apart without
+   competing with the cards a column actually holds. Placed after the dark
+   theme rule, and chained, so it wins in both themes. */
+.tasks-kanban-card.tasks-kanban-card-meta {
+    background-color: color-mix(
+        in srgb,
+        var(--background-primary) 90%,
+        var(--interactive-accent)
+    );
+}
+
+.theme-dark .tasks-kanban-card.tasks-kanban-card-meta {
+    background-color: color-mix(
+        in srgb,
+        var(--background-secondary, #2d2d2d) 88%,
+        var(--interactive-accent)
+    );
+}
+
+.tasks-kanban-card.tasks-kanban-card-meta:hover {
+    background-color: color-mix(
+        in srgb,
+        var(--background-tertiary) 86%,
+        var(--interactive-accent)
+    );
 }
 
 /* Scrollbar styling */

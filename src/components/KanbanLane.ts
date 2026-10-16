@@ -6,6 +6,10 @@ import { columnCollects } from "../utils/columnMatch";
 import type { ColorRule } from "../utils/cardColors";
 import type { SubTask } from "../utils/taskHierarchy";
 import type { BoardAction } from "../utils/boardActions";
+import {
+  taskMatchesFilters,
+  type FilterInstruction,
+} from "../query/boardQuery";
 
 /**
  * A single swimlane: an optional header (the group label) above a horizontal row
@@ -84,12 +88,19 @@ export class KanbanLane {
    * and it leaves the older board types unchanged, since their columns never
    * overlap. A task no column collects is not shown, consistent with query
    * filtering.
+   *
+   * Meta cards are the exception to "one place per task": `metaCards` holds
+   * each column's meta card filters (by column id), and every task matching
+   * one is shown in that column read-only — in as many columns as match. A
+   * column never shows a task twice, so a task whose own card is already there
+   * gets no copy beside it.
    */
   updateTasks(
     tasks: Task[],
     colorRules: ColorRule[] = [],
     subTasksOf: Map<string, SubTask[]> = new Map(),
     actions: BoardAction[] = [],
+    metaCards: Map<string, FilterInstruction[][]> = new Map(),
   ): void {
     const byColumn = this.columns.map<Task[]>(() => []);
 
@@ -103,7 +114,23 @@ export class KanbanLane {
     }
 
     this.columns.forEach((column, index) => {
-      column.updateTasks(byColumn[index], colorRules, subTasksOf, actions);
+      const own = new Set(byColumn[index]);
+      const filters = metaCards.get(column.config.id) ?? [];
+      const meta =
+        filters.length === 0
+          ? []
+          : tasks.filter(
+              (task) =>
+                !own.has(task) &&
+                filters.some((rule) => taskMatchesFilters(task, rule)),
+            );
+      column.updateTasks(
+        byColumn[index],
+        colorRules,
+        subTasksOf,
+        actions,
+        meta,
+      );
     });
   }
 

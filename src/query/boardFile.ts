@@ -8,6 +8,7 @@ import {
   type BoardActionConfig,
   type ColumnConfig,
   type DateColumnConfig,
+  type MetaCardConfig,
   type MetaColumnConfig,
 } from "../types/persistence";
 import {
@@ -49,6 +50,8 @@ export interface BoardFile {
   metaColumns: MetaColumnConfig[];
   /** Named mutations offered in a card's right-click menu. */
   actions: BoardActionConfig[];
+  /** Read-only meta card rules, rendered per column. */
+  metaCards: MetaCardConfig[];
   /** Column ids currently folded. */
   collapsedColumns: string[];
   /** Group keys (swimlane keys) currently folded. */
@@ -70,6 +73,7 @@ export function emptyBoardFile(name: string): BoardFile {
     columns: [],
     metaColumns: [],
     actions: [],
+    metaCards: [],
     collapsedColumns: [],
     collapsedGroups: [],
   };
@@ -172,6 +176,15 @@ export function serializeBoardFile(board: BoardFile): string {
       lines.push(`  - id: ${scalar(action.id)}`);
       lines.push(`    title: ${scalar(action.title)}`);
       lines.push(blockScalar("mutation", action.mutation, "    "));
+    }
+  }
+
+  if (board.metaCards.length > 0) {
+    lines.push("", "metaCards:");
+    for (const card of board.metaCards) {
+      lines.push(`  - id: ${scalar(card.id)}`);
+      lines.push(`    title: ${scalar(card.title)}`);
+      lines.push(blockScalar("filter", card.filter, "    "));
     }
   }
 
@@ -283,6 +296,33 @@ function asMetaColumns(value: unknown): MetaColumnConfig[] {
 }
 
 /**
+ * Coerce the `metaCards:` block. An entry with no filter is dropped: an empty
+ * filter would show every task, read-only, in every column.
+ */
+function asMetaCards(value: unknown): MetaCardConfig[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const cards: MetaCardConfig[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "object" || raw === null) {
+      continue;
+    }
+    const entry = raw as Record<string, unknown>;
+    const filter = asString(entry.filter).trim();
+    if (filter === "") {
+      continue;
+    }
+    cards.push({
+      id: asString(entry.id) || crypto.randomUUID(),
+      title: asString(entry.title),
+      filter,
+    });
+  }
+  return cards;
+}
+
+/**
  * Coerce the `actions:` block. An entry with no mutation is dropped: a menu
  * item that changes nothing is only a way to mislead.
  */
@@ -384,6 +424,7 @@ export function parseBoardFile(
   board.columns = asColumns(doc.columns);
   board.metaColumns = asMetaColumns(doc.metaColumns);
   board.actions = asActions(doc.actions);
+  board.metaCards = asMetaCards(doc.metaCards);
   board.collapsedColumns = asStringList(doc.collapsedColumns);
   board.collapsedGroups = asStringList(doc.collapsedGroups);
 
@@ -397,6 +438,10 @@ export function parseBoardFile(
 
   if (doc.metaColumns !== undefined && !Array.isArray(doc.metaColumns)) {
     errors.push("`metaColumns` must be a list; ignoring it.");
+  }
+
+  if (doc.metaCards !== undefined && !Array.isArray(doc.metaCards)) {
+    errors.push("`metaCards` must be a list; ignoring it.");
   }
 
   if (doc.actions !== undefined && !Array.isArray(doc.actions)) {

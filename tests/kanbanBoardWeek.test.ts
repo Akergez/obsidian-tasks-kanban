@@ -4,6 +4,7 @@ import type {
   BoardOwnState,
   BoardStatePersistence,
 } from "../src/types/persistence";
+import type { Task } from "../src/services/TasksIntegration";
 
 /**
  * A week board is the one board whose columns are not in its file, so what is
@@ -45,6 +46,7 @@ function weekState(overrides: Partial<BoardOwnState> = {}): BoardOwnState {
         mutation: "add tag #w{{nextWeek}}_{{nextYear}}",
       },
     ],
+    metaCards: [],
     columnTagPrefix: "",
     columnOrder: "",
     dateField: "scheduledDate",
@@ -232,5 +234,92 @@ describe("KanbanBoard: a week board", () => {
     const { container } = board(weekState({ boardType: "status" }));
     const bar = container.querySelector<HTMLElement>(".tasks-kanban-week");
     expect(bar?.style.display).toBe("none");
+  });
+});
+
+describe("KanbanBoard: swimlanes", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 26, 9, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function task(path: string, scheduledDate: string, line = 0): Task {
+    return {
+      status: { symbol: " ", name: "Todo", type: "TODO" },
+      description: `Task in ${path}`,
+      tags: [],
+      priority: null,
+      dueDate: null,
+      startDate: null,
+      scheduledDate,
+      doneDate: null,
+      createdDate: null,
+      cancelledDate: null,
+      recurrence: null,
+      id: "",
+      dependsOn: [],
+      taskLocation: { path, lineNumber: line },
+      originalMarkdown: `- [ ] Task in ${path}`,
+    };
+  }
+
+  function laneTitles(container: HTMLElement): string[] {
+    return Array.from(
+      container.querySelectorAll(".tasks-kanban-lane-title"),
+    ).map((el) => el.textContent ?? "");
+  }
+
+  it("draws no lane for a group none of whose tasks has a column", () => {
+    // No Unplanned pool: a task dated outside the week has nowhere to go.
+    const { instance, container } = board(
+      weekState({ query: "group by path", metaColumns: [] }),
+    );
+    instance.updateTasks([
+      task("Shown.md", "2026-08-26"),
+      task("Hidden.md", "2026-12-01"),
+    ]);
+    expect(laneTitles(container)).toEqual(["Shown.md"]);
+  });
+
+  it("brings a lane back once one of its tasks has a column again", () => {
+    const { instance, container } = board(
+      weekState({ query: "group by path", metaColumns: [] }),
+    );
+    instance.updateTasks([task("Later.md", "2026-09-02")]);
+    expect(laneTitles(container)).toEqual([]);
+
+    step(container, 1);
+    expect(laneTitles(container)).toEqual(["Later.md"]);
+  });
+
+  it("keeps a lane whose tasks show only as meta cards", () => {
+    const { instance, container } = board(
+      weekState({
+        query: "group by path",
+        metaColumns: [],
+        metaCards: [
+          {
+            id: "card:starts",
+            title: "Starts",
+            filter: "starts on {{day}}",
+          },
+        ],
+      }),
+    );
+    instance.updateTasks([
+      { ...task("Spans.md", ""), scheduledDate: null, startDate: "2026-08-25" },
+    ]);
+    expect(laneTitles(container)).toEqual(["Spans.md"]);
+    const metaCards = container.querySelectorAll(".tasks-kanban-card-meta");
+    expect(metaCards).toHaveLength(1);
+    expect(
+      metaCards[0]
+        .closest(".tasks-kanban-column")
+        ?.querySelector(".tasks-kanban-column-title")?.textContent,
+    ).toBe("Tuesday 25 Aug");
   });
 });

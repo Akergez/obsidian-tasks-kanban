@@ -67,6 +67,7 @@ function state(overrides: Partial<BoardOwnState> = {}): BoardOwnState {
     columns: [],
     metaColumns: [],
     actions: [],
+    metaCards: [],
     columnTagPrefix: "",
     columnOrder: "",
     dateField: "scheduledDate",

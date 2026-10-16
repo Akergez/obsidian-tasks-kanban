@@ -96,6 +96,32 @@ export interface MetaColumnConfig {
 }
 
 /**
+ * A **meta card** rule: tasks shown *read-only* in every column whose filter
+ * they satisfy, on top of the column's own cards.
+ *
+ * A column's own cards partition the board — each task sits in exactly one
+ * place, the place a drag moves it out of. A meta card is the other kind of
+ * presence: a reference, not a position. It may turn up in several columns at
+ * once (a task running Monday to Friday shows on all five days), and since no
+ * single column owns it there is nowhere a drag of it could mean, so it cannot
+ * be dragged.
+ *
+ * The filter is rendered **per column**: `{{day}}` stands for the column's own
+ * day, so one rule can say "the days this task spans". A column with no day —
+ * a status or tag column, the "No date" catch-all — has nothing to put there,
+ * and a rule that names `{{day}}` shows nothing in it. A rule that names no
+ * placeholder applies to every column alike.
+ */
+export interface MetaCardConfig {
+  /** Stable identifier (crypto.randomUUID()). */
+  id: string;
+  /** A name for the rule, for whoever edits the board. */
+  title: string;
+  /** Filter lines, rendered for each column; empty ⇒ the rule is dropped. */
+  filter: string;
+}
+
+/**
  * Whether a date board leads with the "No date" catch-all when it does not say.
  * On, so a board written before the setting existed keeps every column it had.
  */
@@ -196,6 +222,8 @@ export interface BoardOwnState {
   metaColumns: MetaColumnConfig[];
   /** Card-menu actions. Owned by settings. */
   actions: BoardActionConfig[];
+  /** Read-only meta card rules. Owned by settings. */
+  metaCards: MetaCardConfig[];
   /** Date columns: the field their days apply to. Owned by settings. */
   dateField: DateField;
   /** Date columns: the days shown, in order. Owned by settings. */

@@ -123,13 +123,16 @@ export class KanbanColumn {
   }
 
   /**
-   * Update tasks in this column
+   * Update tasks in this column: its own cards, then `metaTasks` as read-only
+   * meta cards. The count is of the column's own cards only — a meta card is a
+   * reference to a task that lives somewhere else.
    */
   updateTasks(
     tasks: Task[],
     colorRules: ColorRule[] = [],
     subTasksOf: Map<string, SubTask[]> = new Map(),
     actions: BoardAction[] = [],
+    metaTasks: Task[] = [],
   ) {
     // Clear existing cards
     for (const card of this.cards) {
@@ -151,7 +154,11 @@ export class KanbanColumn {
     );
     if (!cardsContainer) return;
 
-    for (const task of tasks) {
+    const entries = [
+      ...tasks.map((task) => ({ task, readOnly: false })),
+      ...metaTasks.map((task) => ({ task, readOnly: true })),
+    ];
+    for (const { task, readOnly } of entries) {
       const cardEl = cardsContainer.createDiv({
         cls: "tasks-kanban-card",
       });
@@ -162,6 +169,7 @@ export class KanbanColumn {
         colorFor(task, colorRules),
         subTasksOf.get(taskKey(task)) ?? [],
         actions,
+        readOnly,
       );
       this.cards.push(card);
       card.render();

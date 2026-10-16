@@ -6,7 +6,17 @@ import { parseBoardFile, serializeBoardFile } from "../src/query/boardFile";
 import { buildMetaColumns } from "../src/utils/metaColumns";
 import { buildBoardActions } from "../src/utils/boardActions";
 import { columnCollects } from "../src/utils/columnMatch";
-import { renderWeek, weekVariables } from "../src/utils/weeklyBoard";
+import {
+  renderWeek,
+  weekColumns,
+  weekVariables,
+} from "../src/utils/weeklyBoard";
+import {
+  META_CARD_VARIABLES,
+  metaCardFiltersFor,
+} from "../src/utils/metaCards";
+import { buildDateColumns } from "../src/utils/dateColumns";
+import { taskMatchesFilters } from "../src/query/boardQuery";
 import type { Task } from "../src/services/TasksIntegration";
 
 /** A local-midnight Date for a `YYYY-MM-DD` day. */
@@ -62,10 +72,14 @@ describe("the default weekly note", () => {
   });
 
   it("asks only for variables the plugin provides", () => {
-    const known = Object.keys(weekVariables(day("2026-08-24")));
+    const known = [
+      ...Object.keys(weekVariables(day("2026-08-24"))),
+      ...META_CARD_VARIABLES,
+    ];
     const board = storedBoard();
     const templated = [
       ...board.metaColumns.flatMap((c) => [c.filter, c.mutation]),
+      ...board.metaCards.map((c) => c.filter),
       ...board.actions.map((a) => a.mutation),
       board.cardColors,
     ].join("\n");
@@ -143,6 +157,47 @@ describe("the default weekly note", () => {
       )[0];
       expect(columnCollects(early, task({ tags: ["#w5_2026"] }))).toBe(true);
       expect(columnCollects(early, task({ tags: ["#w6_2026"] }))).toBe(false);
+    });
+  });
+
+  describe("its meta cards", () => {
+    const monday = day("2026-08-24");
+    const board = storedBoard();
+    const days = buildDateColumns(board.dateField, weekColumns(monday), false);
+    const rules = board.metaCards.map((card) => ({
+      ...card,
+      filter: renderWeek(card.filter, monday),
+    }));
+
+    /** The weekdays (Monday = 0) on which `subject` shows as a meta card. */
+    function shownOn(subject: Task): number[] {
+      return days.flatMap((column, index) =>
+        metaCardFiltersFor(rules, column).some((filters) =>
+          taskMatchesFilters(subject, filters),
+        )
+          ? [index]
+          : [],
+      );
+    }
+
+    it("shows a task on the day it starts", () => {
+      expect(shownOn(task({ startDate: "2026-08-26" }))).toEqual([2]);
+    });
+
+    it("shows a task on every day from its start to its due date", () => {
+      expect(
+        shownOn(task({ startDate: "2026-08-25", dueDate: "2026-08-27" })),
+      ).toEqual([1, 2, 3]);
+    });
+
+    it("shows a task begun last week on the days it still runs", () => {
+      expect(
+        shownOn(task({ startDate: "2026-08-20", dueDate: "2026-08-25" })),
+      ).toEqual([0, 1]);
+    });
+
+    it("shows nothing for a task without a start date", () => {
+      expect(shownOn(task({ dueDate: "2026-08-26" }))).toEqual([]);
     });
   });
 });

@@ -38,6 +38,12 @@ export class KanbanCard {
   private readonly subTasks: SubTask[];
   /** The board's card-menu actions, offered on right-click. */
   private readonly actions: BoardAction[];
+  /**
+   * A meta card: a read-only reference to a task whose own card is elsewhere
+   * (or nowhere). It may stand in several columns at once, so no column owns
+   * it and a drag of it would mean nothing — it cannot be dragged.
+   */
+  private readonly readOnly: boolean;
 
   constructor(
     container: HTMLElement,
@@ -46,6 +52,7 @@ export class KanbanCard {
     spineColor?: string,
     subTasks: SubTask[] = [],
     actions: BoardAction[] = [],
+    readOnly = false,
   ) {
     this.container = container;
     this.task = task;
@@ -54,6 +61,7 @@ export class KanbanCard {
     this.spineColor = spineColor;
     this.subTasks = subTasks;
     this.actions = actions;
+    this.readOnly = readOnly;
   }
 
   /**
@@ -67,7 +75,8 @@ export class KanbanCard {
       "data-task-path",
       this.task.taskLocation?.path || "",
     );
-    this.container.setAttribute("draggable", "true");
+    this.container.setAttribute("draggable", this.readOnly ? "false" : "true");
+    this.container.toggleClass("tasks-kanban-card-meta", this.readOnly);
 
     // Paint the spine when a board colour rule matches this task. Everything
     // else about the spine (width, default colour) lives in the stylesheet.
@@ -99,8 +108,10 @@ export class KanbanCard {
     // Footer: tags alongside the name of the note the task lives in.
     this.renderFooter();
 
-    // Add drag start handler
-    this.setupDragAndDrop();
+    // Add drag start handler; a meta card has nowhere to be dragged from.
+    if (!this.readOnly) {
+      this.setupDragAndDrop();
+    }
 
     // Add click handler to open the source file
     this.clickHandler = (event: MouseEvent) => {

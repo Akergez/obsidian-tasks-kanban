@@ -20,7 +20,9 @@ tasks-kanban: true
 
 One board for every week: the columns are the days of the week you are looking
 at, and the arrows above them page back and forth. \`{{week}}\`, \`{{year}}\` and
-\`{{monday}}\` below stand for whichever week that is.
+\`{{monday}}\` below stand for whichever week that is, and \`{{day}}\` for the
+day of the column a meta card is shown in. A task with a start date shows,
+read-only, on the day it starts and on every day up to its due date.
 
 \`\`\`tasks-kanban
 name: Weekly
@@ -41,6 +43,12 @@ metaColumns:
     mutation: |-
       set not done
       clear scheduled date
+
+metaCards:
+  - id: card:spans-day
+    title: Spans this day
+    filter: |-
+      (starts on {{day}}) OR ((starts before {{day}}) AND (has due date) AND NOT (due before {{day}}))
 
 actions:
   - id: action:next-week

@@ -29,6 +29,8 @@ import { parseColorRules, type ColorRule } from "../utils/cardColors";
 import { nestTasks, type SubTask } from "../utils/taskHierarchy";
 import { getUniqueTags } from "../utils/searchFilter";
 import { groupTasks, type TaskGroup } from "../utils/groupTasks";
+import { columnCollects } from "../utils/columnMatch";
+import { metaCardFiltersFor } from "../utils/metaCards";
 import {
   applyBoardQuery,
   getExcludedTags,
@@ -39,12 +41,14 @@ import {
   mergeQueries,
   parseQuery,
   serializeQuery,
+  taskMatchesFilters,
   withExcludedTags,
   withGroup,
   withSort,
   withTags,
   withTitle,
   type BoardQuery,
+  type FilterInstruction,
 } from "../query/boardQuery";
 import type {
   BoardActionConfig,
@@ -52,6 +56,7 @@ import type {
   BoardType,
   ColumnConfig,
   DateColumnConfig,
+  MetaCardConfig,
   MetaColumnConfig,
 } from "../types/persistence";
 
@@ -106,6 +111,8 @@ export class KanbanBoard {
   private actionConfigs: BoardActionConfig[];
   /** {@link actionConfigs} parsed; rebuilt whenever the raw setting changes. */
   private actions: BoardAction[] = [];
+  /** Read-only meta card rules for this board, as configured. */
+  private metaCards: MetaCardConfig[];
   /** Tag-column prefix for this board. Set in settings. */
   private columnTagPrefix: string;
   /** Tag-column order for this board; "" ⇒ alphabetical. Set in settings. */
@@ -151,6 +158,7 @@ export class KanbanBoard {
     this.columnConfigs = initial.columns;
     this.metaColumns = initial.metaColumns;
     this.actionConfigs = initial.actions;
+    this.metaCards = initial.metaCards;
     this.columnTagPrefix = initial.columnTagPrefix;
     this.columnOrder = initial.columnOrder;
     this.dateField = initial.dateField;
@@ -293,6 +301,7 @@ export class KanbanBoard {
       columns: this.columnConfigs,
       metaColumns: this.metaColumns,
       actions: this.actionConfigs,
+      metaCards: this.metaCards,
       cardColors: this.cardColors,
     };
 
@@ -312,6 +321,7 @@ export class KanbanBoard {
         this.columnConfigs = next.columns;
         this.metaColumns = next.metaColumns;
         this.actionConfigs = next.actions;
+        this.metaCards = next.metaCards;
         this.cardColors = next.cardColors;
         this.rebuildForWeek();
         this.syncWeekBar();
@@ -433,6 +443,7 @@ export class KanbanBoard {
       columns: this.columnConfigs,
       metaColumns: this.metaColumns,
       actions: this.actionConfigs,
+      metaCards: this.metaCards,
       columnTagPrefix: this.columnTagPrefix,
       columnOrder: this.columnOrder,
       dateField: this.dateField,
@@ -523,6 +534,7 @@ export class KanbanBoard {
     this.columnConfigs = state.columns;
     this.metaColumns = state.metaColumns;
     this.actionConfigs = state.actions;
+    this.metaCards = state.metaCards;
     this.columnTagPrefix = state.columnTagPrefix;
     this.columnOrder = state.columnOrder;
     this.dateField = state.dateField;
@@ -622,8 +634,25 @@ export class KanbanBoard {
    * lane signature so editing columns (which doesn't change group keys) still
    * re-renders — hence the signature carries every field a column matches on.
    */
-  private renderLanes(groups: TaskGroup[]) {
+  private renderLanes(allGroups: TaskGroup[]) {
     const columnConfigs = this.resolveColumnConfigs();
+    const metaCards = this.metaCardsByColumn(columnConfigs);
+    // A lane none of whose tasks any column shows would be drawn empty: a date
+    // or week board hides tasks dated outside its days, and grouping by path
+    // then made a lane for every note holding one. With grouping off the single
+    // lane is the board itself and always stays.
+    const shown = (task: Task) =>
+      columnConfigs.some(
+        (column) =>
+          columnCollects(column, task) ||
+          (metaCards.get(column.id) ?? []).some((filters) =>
+            taskMatchesFilters(task, filters),
+          ),
+      );
+    const groups =
+      allGroups.length === 1 && allGroups[0].label === ""
+        ? allGroups
+        : allGroups.filter((group) => group.tasks.some(shown));
     const columnSignature = columnConfigs
       .map(
         (c) =>
@@ -666,7 +695,27 @@ export class KanbanBoard {
         this.colorRules,
         this.subTasksOf,
         this.actions,
+        metaCards,
       ),
+    );
+  }
+
+  /**
+   * The meta card filters for each column, keyed by column id: the board's
+   * rules rendered first for the week being shown, then for each column's day.
+   */
+  private metaCardsByColumn(
+    columnConfigs: KanbanColumnConfig[],
+  ): Map<string, FilterInstruction[][]> {
+    const rules = this.metaCards.map((card) => ({
+      ...card,
+      filter: this.forWeek(card.filter),
+    }));
+    return new Map(
+      columnConfigs.map((column) => [
+        column.id,
+        metaCardFiltersFor(rules, column),
+      ]),
     );
   }
 
