@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.20.1...0.21.0) (2026-10-16)
+
+
+### Features
+
+* meta columns ([8e35cab](https://github.com/Akergez/obsidian-tasks-kanban/commit/8e35cab07ddade8feff5707de4389d9a65038cdf))
+
 ## [0.20.1](https://github.com/Akergez/obsidian-tasks-kanban/compare/0.20.0...0.20.1) (2026-08-25)
 
 
